@@ -3,11 +3,15 @@ package com.skykyuu.backend.game.simulation.ball;
 import com.skykyuu.backend.game.court.CourtResult;
 import com.skykyuu.backend.game.court.CourtSide;
 import com.skykyuu.backend.game.court.IndoorCourtClassifier;
+import com.skykyuu.backend.game.simulation.player.PlayerBallContactMath;
+import com.skykyuu.backend.game.simulation.player.PlayerBallContactTarget;
 
 import java.util.ArrayList;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Objects;
 import java.util.OptionalDouble;
+import java.util.Set;
 
 public final class FixedStepVolleyballSimulator {
 
@@ -17,12 +21,26 @@ public final class FixedStepVolleyballSimulator {
     private double accumulatorSeconds;
     private long totalSimulationSteps;
     private boolean groundContactOccurred;
+    private final Set<String> activePlayerContactIds = new HashSet<>();
 
     public FixedStepVolleyballSimulator(VolleyballState initialState) {
         state = Objects.requireNonNull(initialState, "initialState must not be null");
     }
 
     public BallSimulationAdvanceResult advance(double frameDeltaSeconds) {
+        return advance(frameDeltaSeconds, List.of());
+    }
+
+    public BallSimulationAdvanceResult advance(
+            double frameDeltaSeconds,
+            List<PlayerBallContactTarget> playerContactTargets
+    ) {
+        List<PlayerBallContactTarget> contactTargets = List.copyOf(
+                Objects.requireNonNull(
+                        playerContactTargets,
+                        "playerContactTargets must not be null"
+                )
+        );
         if (groundContactOccurred
                 || !Double.isFinite(frameDeltaSeconds)
                 || frameDeltaSeconds <= 0.0) {
@@ -36,7 +54,7 @@ public final class FixedStepVolleyballSimulator {
         accumulatorSeconds += cappedDeltaSeconds;
 
         int stepsExecuted = 0;
-        List<BallSimulationEvent> events = new ArrayList<>(1);
+        List<BallSimulationEvent> events = new ArrayList<>(contactTargets.size() + 1);
         while (stepsExecuted < VolleyballSimulationConfig.MAX_SUB_STEPS
                 && accumulatorSeconds + ACCUMULATOR_EPSILON_SECONDS
                 >= VolleyballSimulationConfig.FIXED_STEP_SECONDS) {
@@ -47,6 +65,7 @@ public final class FixedStepVolleyballSimulator {
 
             if (groundContactTime.isPresent()) {
                 state = stateAtGroundContact(groundContactTime.getAsDouble());
+                appendPlayerContactEvents(contactTargets, events);
                 events.add(toGroundContactEvent(state));
                 groundContactOccurred = true;
                 accumulatorSeconds = 0.0;
@@ -55,6 +74,7 @@ public final class FixedStepVolleyballSimulator {
                         state,
                         VolleyballSimulationConfig.FIXED_STEP_SECONDS
                 );
+                appendPlayerContactEvents(contactTargets, events);
                 accumulatorSeconds -= VolleyballSimulationConfig.FIXED_STEP_SECONDS;
                 if (accumulatorSeconds < 0.0
                         && accumulatorSeconds > -ACCUMULATOR_EPSILON_SECONDS) {
@@ -94,6 +114,7 @@ public final class FixedStepVolleyballSimulator {
         accumulatorSeconds = 0.0;
         totalSimulationSteps = 0L;
         groundContactOccurred = false;
+        activePlayerContactIds.clear();
     }
 
     private VolleyballState stateAtGroundContact(double contactTimeSeconds) {
@@ -123,5 +144,32 @@ public final class FixedStepVolleyballSimulator {
                 courtResult,
                 courtSide
         );
+    }
+
+    private void appendPlayerContactEvents(
+            List<PlayerBallContactTarget> contactTargets,
+            List<BallSimulationEvent> events
+    ) {
+        // B3 intentionally samples discrete overlap only at completed fixed-step states.
+        Set<String> overlappingPlayerIds = new HashSet<>();
+        for (PlayerBallContactTarget target : contactTargets) {
+            if (!PlayerBallContactMath.isBallOverlappingPlayer(state.position(), target)) {
+                continue;
+            }
+
+            if (overlappingPlayerIds.add(target.playerId())
+                    && !activePlayerContactIds.contains(target.playerId())) {
+                events.add(new PlayerBallContactEvent(
+                        target.playerId(),
+                        target.teamSide(),
+                        state.position(),
+                        state.velocity(),
+                        target.position()
+                ));
+            }
+        }
+
+        activePlayerContactIds.retainAll(overlappingPlayerIds);
+        activePlayerContactIds.addAll(overlappingPlayerIds);
     }
 }
