@@ -2,8 +2,13 @@ package com.skykyuu.backend.game.simulation.ball;
 
 import org.junit.jupiter.api.Test;
 
+import java.util.List;
+import java.util.OptionalDouble;
+
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotSame;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
 class VolleyballSimulationMathTests {
 
@@ -79,6 +84,84 @@ class VolleyballSimulationMathTests {
         }
 
         assertKnownOneSecondState(state, 1.0e-10);
+    }
+
+    @Test
+    void findsDescendingGroundContactInsideOneFixedStep() {
+        VolleyballState state = new VolleyballState(
+                new BallVector3(0.0, VolleyballConfig.RADIUS_METERS + 0.02, 0.0),
+                new BallVector3(0.0, -2.0, 0.0)
+        );
+
+        OptionalDouble contactTime = VolleyballSimulationMath.findGroundContactTime(
+                state,
+                VolleyballSimulationConfig.FIXED_STEP_SECONDS
+        );
+
+        assertTrue(contactTime.isPresent());
+        assertTrue(contactTime.getAsDouble() >= 0.0);
+        assertTrue(
+                contactTime.getAsDouble() <= VolleyballSimulationConfig.FIXED_STEP_SECONDS
+        );
+        double gravity = VolleyballSimulationConfig.GRAVITY_METERS_PER_SECOND_SQUARED;
+        double expectedContactTime = (
+                -2.0 + Math.sqrt(4.0 + 2.0 * gravity * 0.02)
+        ) / gravity;
+        assertEquals(expectedContactTime, contactTime.getAsDouble(), TOLERANCE);
+        VolleyballState impactState = VolleyballSimulationMath.stepFreeFlight(
+                state,
+                contactTime.getAsDouble()
+        );
+        assertEquals(VolleyballConfig.RADIUS_METERS, impactState.position().y(), TOLERANCE);
+    }
+
+    @Test
+    void returnsNoContactWhenBallRemainsAboveGroundDuringStep() {
+        VolleyballState state = new VolleyballState(
+                new BallVector3(0.0, 3.0, 0.0),
+                new BallVector3(0.0, 0.0, 0.0)
+        );
+
+        OptionalDouble contactTime = VolleyballSimulationMath.findGroundContactTime(
+                state,
+                VolleyballSimulationConfig.FIXED_STEP_SECONDS
+        );
+
+        assertTrue(contactTime.isEmpty());
+    }
+
+    @Test
+    void rejectsInvalidMaximumDeltas() {
+        VolleyballState state = new VolleyballState(
+                new BallVector3(0.0, VolleyballConfig.RADIUS_METERS, 0.0),
+                new BallVector3(0.0, -1.0, 0.0)
+        );
+        List<Double> invalidDeltas = List.of(
+                Double.NaN,
+                Double.POSITIVE_INFINITY,
+                Double.NEGATIVE_INFINITY,
+                -1.0
+        );
+
+        for (double invalidDelta : invalidDeltas) {
+            assertFalse(
+                    VolleyballSimulationMath.findGroundContactTime(state, invalidDelta)
+                            .isPresent()
+            );
+        }
+    }
+
+    @Test
+    void acceptsAnExactDescendingContactAtZeroDelta() {
+        VolleyballState state = new VolleyballState(
+                new BallVector3(0.0, VolleyballConfig.RADIUS_METERS, 0.0),
+                new BallVector3(0.0, -1.0, 0.0)
+        );
+
+        OptionalDouble contactTime = VolleyballSimulationMath.findGroundContactTime(state, 0.0);
+
+        assertTrue(contactTime.isPresent());
+        assertEquals(0.0, contactTime.getAsDouble(), 0.0);
     }
 
     private static VolleyballState knownInitialState() {
