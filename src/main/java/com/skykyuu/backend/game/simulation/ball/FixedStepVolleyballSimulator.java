@@ -4,6 +4,7 @@ import com.skykyuu.backend.game.court.CourtResult;
 import com.skykyuu.backend.game.court.CourtSide;
 import com.skykyuu.backend.game.court.IndoorCourtClassifier;
 import com.skykyuu.backend.game.simulation.player.PlayerBallContactMath;
+import com.skykyuu.backend.game.simulation.player.PlayerBallContactResponseMath;
 import com.skykyuu.backend.game.simulation.player.PlayerBallContactTarget;
 
 import java.util.ArrayList;
@@ -65,7 +66,7 @@ public final class FixedStepVolleyballSimulator {
 
             if (groundContactTime.isPresent()) {
                 state = stateAtGroundContact(groundContactTime.getAsDouble());
-                appendPlayerContactEvents(contactTargets, events);
+                events.addAll(detectNewPlayerContacts(contactTargets));
                 events.add(toGroundContactEvent(state));
                 groundContactOccurred = true;
                 accumulatorSeconds = 0.0;
@@ -74,7 +75,18 @@ public final class FixedStepVolleyballSimulator {
                         state,
                         VolleyballSimulationConfig.FIXED_STEP_SECONDS
                 );
-                appendPlayerContactEvents(contactTargets, events);
+                List<PlayerBallContactEvent> playerContacts = detectNewPlayerContacts(
+                        contactTargets
+                );
+                events.addAll(playerContacts);
+                if (!playerContacts.isEmpty()) {
+                    PlayerBallContactEvent respondingContact = playerContacts.getFirst();
+                    state = PlayerBallContactResponseMath.applyPlayerContactResponse(
+                            state,
+                            respondingContact
+                    );
+                    events.add(toPlayerContactResponseEvent(respondingContact, state));
+                }
                 accumulatorSeconds -= VolleyballSimulationConfig.FIXED_STEP_SECONDS;
                 if (accumulatorSeconds < 0.0
                         && accumulatorSeconds > -ACCUMULATOR_EPSILON_SECONDS) {
@@ -146,12 +158,12 @@ public final class FixedStepVolleyballSimulator {
         );
     }
 
-    private void appendPlayerContactEvents(
-            List<PlayerBallContactTarget> contactTargets,
-            List<BallSimulationEvent> events
+    private List<PlayerBallContactEvent> detectNewPlayerContacts(
+            List<PlayerBallContactTarget> contactTargets
     ) {
-        // B3 intentionally samples discrete overlap only at completed fixed-step states.
+        // Player overlap remains a discrete fixed-step sample; B4 only adds its response.
         Set<String> overlappingPlayerIds = new HashSet<>();
+        List<PlayerBallContactEvent> newContacts = new ArrayList<>();
         for (PlayerBallContactTarget target : contactTargets) {
             if (!PlayerBallContactMath.isBallOverlappingPlayer(state.position(), target)) {
                 continue;
@@ -159,7 +171,7 @@ public final class FixedStepVolleyballSimulator {
 
             if (overlappingPlayerIds.add(target.playerId())
                     && !activePlayerContactIds.contains(target.playerId())) {
-                events.add(new PlayerBallContactEvent(
+                newContacts.add(new PlayerBallContactEvent(
                         target.playerId(),
                         target.teamSide(),
                         state.position(),
@@ -171,5 +183,19 @@ public final class FixedStepVolleyballSimulator {
 
         activePlayerContactIds.retainAll(overlappingPlayerIds);
         activePlayerContactIds.addAll(overlappingPlayerIds);
+        return newContacts;
+    }
+
+    private static PlayerBallContactResponseEvent toPlayerContactResponseEvent(
+            PlayerBallContactEvent contact,
+            VolleyballState responseState
+    ) {
+        return new PlayerBallContactResponseEvent(
+                contact.playerId(),
+                contact.teamSide(),
+                contact.ballPosition(),
+                contact.ballVelocity(),
+                responseState.velocity()
+        );
     }
 }
