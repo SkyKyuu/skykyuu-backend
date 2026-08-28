@@ -5,6 +5,7 @@ import java.util.OptionalDouble;
 
 public final class VolleyballSimulationMath {
 
+    private static final double CONTACT_TIME_EPSILON_SECONDS = 1.0e-12;
     private static final double DESCENDING_VELOCITY_EPSILON = 1.0e-12;
 
     private VolleyballSimulationMath() {
@@ -86,8 +87,9 @@ public final class VolleyballSimulationMath {
             double maximumDeltaSeconds
     ) {
         if (!Double.isFinite(candidateSeconds)
-                || candidateSeconds < 0.0
-                || candidateSeconds > maximumDeltaSeconds) {
+                || candidateSeconds < -CONTACT_TIME_EPSILON_SECONDS
+                || candidateSeconds
+                > maximumDeltaSeconds + CONTACT_TIME_EPSILON_SECONDS) {
             return OptionalDouble.empty();
         }
 
@@ -96,6 +98,11 @@ public final class VolleyballSimulationMath {
             return OptionalDouble.empty();
         }
 
-        return OptionalDouble.of(candidateSeconds);
+        double normalizedContactTime = Math.clamp(
+                candidateSeconds,
+                0.0,
+                maximumDeltaSeconds
+        );
+        return OptionalDouble.of(normalizedContactTime);
     }
 }

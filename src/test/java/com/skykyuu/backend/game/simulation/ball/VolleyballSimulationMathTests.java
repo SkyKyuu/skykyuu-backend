@@ -13,6 +13,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 class VolleyballSimulationMathTests {
 
     private static final double TOLERANCE = 1.0e-12;
+    private static final double CONTACT_TIME_EPSILON_SECONDS = 1.0e-12;
 
     @Test
     void advancesOneFixedStepUsingFreeFlightEquations() {
@@ -164,10 +165,67 @@ class VolleyballSimulationMathTests {
         assertEquals(0.0, contactTime.getAsDouble(), 0.0);
     }
 
+    @Test
+    void normalizesSlightlyNegativeContactTimeWithinEpsilonToZero() {
+        double candidateTime = -CONTACT_TIME_EPSILON_SECONDS / 2.0;
+        VolleyballState state = stateWithDescendingGroundContactAt(candidateTime);
+
+        OptionalDouble contactTime = VolleyballSimulationMath.findGroundContactTime(
+                state,
+                VolleyballSimulationConfig.FIXED_STEP_SECONDS
+        );
+
+        assertTrue(contactTime.isPresent());
+        assertEquals(0.0, contactTime.getAsDouble(), 0.0);
+    }
+
+    @Test
+    void normalizesContactTimeSlightlyAboveMaximumWithinEpsilonToMaximum() {
+        double maximumDeltaSeconds = VolleyballSimulationConfig.FIXED_STEP_SECONDS;
+        double candidateTime = maximumDeltaSeconds + CONTACT_TIME_EPSILON_SECONDS / 2.0;
+        VolleyballState state = stateWithDescendingGroundContactAt(candidateTime);
+
+        OptionalDouble contactTime = VolleyballSimulationMath.findGroundContactTime(
+                state,
+                maximumDeltaSeconds
+        );
+
+        assertTrue(contactTime.isPresent());
+        assertEquals(maximumDeltaSeconds, contactTime.getAsDouble(), 0.0);
+    }
+
+    @Test
+    void rejectsContactTimeAboveMaximumOutsideEpsilon() {
+        double maximumDeltaSeconds = VolleyballSimulationConfig.FIXED_STEP_SECONDS;
+        double candidateTime = maximumDeltaSeconds + 2.0 * CONTACT_TIME_EPSILON_SECONDS;
+        VolleyballState state = stateWithDescendingGroundContactAt(candidateTime);
+
+        OptionalDouble contactTime = VolleyballSimulationMath.findGroundContactTime(
+                state,
+                maximumDeltaSeconds
+        );
+
+        assertTrue(contactTime.isEmpty());
+    }
+
     private static VolleyballState knownInitialState() {
         return new VolleyballState(
                 new BallVector3(0.0, 3.0, -3.0),
                 new BallVector3(0.0, 3.0, 6.0)
+        );
+    }
+
+    private static VolleyballState stateWithDescendingGroundContactAt(
+            double contactTimeSeconds
+    ) {
+        double initialVelocityY = -1.0;
+        double gravity = VolleyballSimulationConfig.GRAVITY_METERS_PER_SECOND_SQUARED;
+        double initialY = VolleyballConfig.RADIUS_METERS
+                - initialVelocityY * contactTimeSeconds
+                + 0.5 * gravity * contactTimeSeconds * contactTimeSeconds;
+        return new VolleyballState(
+                new BallVector3(0.0, initialY, 0.0),
+                new BallVector3(0.0, initialVelocityY, 0.0)
         );
     }
 
