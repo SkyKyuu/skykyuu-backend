@@ -17,9 +17,12 @@ class FixedStepVolleyballSimulatorTests {
         VolleyballState initialState = knownInitialState();
         FixedStepVolleyballSimulator simulator = new FixedStepVolleyballSimulator(initialState);
 
-        int steps = simulator.advance(VolleyballSimulationConfig.FIXED_STEP_SECONDS);
+        BallSimulationAdvanceResult result = simulator.advance(
+                VolleyballSimulationConfig.FIXED_STEP_SECONDS
+        );
 
-        assertEquals(1, steps);
+        assertEquals(1, result.executedSteps());
+        assertTrue(result.events().isEmpty());
         assertEquals(1L, simulator.getTotalSimulationSteps());
         assertEquals(0.0, simulator.getAccumulatorSeconds(), TOLERANCE);
         assertEquals(
@@ -78,7 +81,9 @@ class FixedStepVolleyballSimulatorTests {
         );
 
         for (double invalidDelta : invalidDeltas) {
-            assertEquals(0, simulator.advance(invalidDelta));
+            BallSimulationAdvanceResult result = simulator.advance(invalidDelta);
+            assertEquals(0, result.executedSteps());
+            assertTrue(result.events().isEmpty());
         }
 
         assertSame(initialState, simulator.getState());
@@ -95,10 +100,10 @@ class FixedStepVolleyballSimulatorTests {
                 knownInitialState()
         );
 
-        int cappedSteps = cappedSimulator.advance(10.0);
+        int cappedSteps = cappedSimulator.advance(10.0).executedSteps();
         int referenceSteps = referenceSimulator.advance(
                 VolleyballSimulationConfig.MAX_FRAME_DELTA_SECONDS
-        );
+        ).executedSteps();
 
         assertEquals(referenceSteps, cappedSteps);
         assertEquals(6, cappedSteps);
@@ -111,7 +116,7 @@ class FixedStepVolleyballSimulatorTests {
                 knownInitialState()
         );
 
-        int steps = simulator.advance(Double.MAX_VALUE);
+        int steps = simulator.advance(Double.MAX_VALUE).executedSteps();
 
         assertTrue(steps <= VolleyballSimulationConfig.MAX_SUB_STEPS);
         assertEquals(steps, simulator.getTotalSimulationSteps());
@@ -124,9 +129,9 @@ class FixedStepVolleyballSimulatorTests {
         );
         double halfStep = VolleyballSimulationConfig.FIXED_STEP_SECONDS / 2.0;
 
-        assertEquals(0, simulator.advance(halfStep));
+        assertEquals(0, simulator.advance(halfStep).executedSteps());
         assertEquals(halfStep, simulator.getAccumulatorSeconds(), TOLERANCE);
-        assertEquals(1, simulator.advance(halfStep));
+        assertEquals(1, simulator.advance(halfStep).executedSteps());
         assertEquals(0.0, simulator.getAccumulatorSeconds(), TOLERANCE);
     }
 
