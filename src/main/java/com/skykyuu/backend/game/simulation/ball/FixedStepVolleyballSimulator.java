@@ -3,6 +3,7 @@ package com.skykyuu.backend.game.simulation.ball;
 import com.skykyuu.backend.game.court.CourtResult;
 import com.skykyuu.backend.game.court.CourtSide;
 import com.skykyuu.backend.game.court.IndoorCourtClassifier;
+import com.skykyuu.backend.game.simulation.input.PlayerHitIntent;
 import com.skykyuu.backend.game.simulation.player.PlayerBallContactMath;
 import com.skykyuu.backend.game.simulation.player.PlayerBallContactResponseMath;
 import com.skykyuu.backend.game.simulation.player.PlayerBallContactTarget;
@@ -23,23 +24,38 @@ public final class FixedStepVolleyballSimulator {
     private long totalSimulationSteps;
     private boolean groundContactOccurred;
     private final Set<String> activePlayerContactIds = new HashSet<>();
+    private final Set<String> respondedPlayerContactIds = new HashSet<>();
 
     public FixedStepVolleyballSimulator(VolleyballState initialState) {
         state = Objects.requireNonNull(initialState, "initialState must not be null");
     }
 
     public BallSimulationAdvanceResult advance(double frameDeltaSeconds) {
-        return advance(frameDeltaSeconds, List.of());
+        return advance(frameDeltaSeconds, List.of(), List.of());
     }
 
     public BallSimulationAdvanceResult advance(
             double frameDeltaSeconds,
             List<PlayerBallContactTarget> playerContactTargets
     ) {
+        return advance(frameDeltaSeconds, playerContactTargets, List.of());
+    }
+
+    public BallSimulationAdvanceResult advance(
+            double frameDeltaSeconds,
+            List<PlayerBallContactTarget> playerContactTargets,
+            List<PlayerHitIntent> playerHitIntents
+    ) {
         List<PlayerBallContactTarget> contactTargets = List.copyOf(
                 Objects.requireNonNull(
                         playerContactTargets,
                         "playerContactTargets must not be null"
+                )
+        );
+        List<PlayerHitIntent> hitIntents = List.copyOf(
+                Objects.requireNonNull(
+                        playerHitIntents,
+                        "playerHitIntents must not be null"
                 )
         );
         if (groundContactOccurred
@@ -55,7 +71,7 @@ public final class FixedStepVolleyballSimulator {
         accumulatorSeconds += cappedDeltaSeconds;
 
         int stepsExecuted = 0;
-        List<BallSimulationEvent> events = new ArrayList<>(contactTargets.size() + 1);
+        List<BallSimulationEvent> events = new ArrayList<>(contactTargets.size() + 2);
         while (stepsExecuted < VolleyballSimulationConfig.MAX_SUB_STEPS
                 && accumulatorSeconds + ACCUMULATOR_EPSILON_SECONDS
                 >= VolleyballSimulationConfig.FIXED_STEP_SECONDS) {
@@ -66,7 +82,8 @@ public final class FixedStepVolleyballSimulator {
 
             if (groundContactTime.isPresent()) {
                 state = stateAtGroundContact(groundContactTime.getAsDouble());
-                events.addAll(detectNewPlayerContacts(contactTargets));
+                PlayerContactDetectionResult contacts = detectPlayerContacts(contactTargets);
+                events.addAll(contacts.newContactEvents());
                 events.add(toGroundContactEvent(state));
                 groundContactOccurred = true;
                 accumulatorSeconds = 0.0;
@@ -75,18 +92,25 @@ public final class FixedStepVolleyballSimulator {
                         state,
                         VolleyballSimulationConfig.FIXED_STEP_SECONDS
                 );
-                List<PlayerBallContactEvent> playerContacts = detectNewPlayerContacts(
-                        contactTargets
+                PlayerContactDetectionResult contacts = detectPlayerContacts(contactTargets);
+                events.addAll(contacts.newContactEvents());
+
+                PlayerBallContactTarget respondingTarget = findRespondingTarget(
+                        contacts.overlappingTargets(),
+                        hitIntents
                 );
-                events.addAll(playerContacts);
-                if (!playerContacts.isEmpty()) {
-                    PlayerBallContactEvent respondingContact = playerContacts.getFirst();
+                if (respondingTarget != null) {
+                    PlayerBallContactEvent responseContact = toPlayerContactSnapshot(
+                            respondingTarget
+                    );
                     state = PlayerBallContactResponseMath.applyPlayerContactResponse(
                             state,
-                            respondingContact
+                            responseContact
                     );
-                    events.add(toPlayerContactResponseEvent(respondingContact, state));
+                    events.add(toPlayerContactResponseEvent(responseContact, state));
+                    respondedPlayerContactIds.add(respondingTarget.playerId());
                 }
+
                 accumulatorSeconds -= VolleyballSimulationConfig.FIXED_STEP_SECONDS;
                 if (accumulatorSeconds < 0.0
                         && accumulatorSeconds > -ACCUMULATOR_EPSILON_SECONDS) {
@@ -127,6 +151,7 @@ public final class FixedStepVolleyballSimulator {
         totalSimulationSteps = 0L;
         groundContactOccurred = false;
         activePlayerContactIds.clear();
+        respondedPlayerContactIds.clear();
     }
 
     private VolleyballState stateAtGroundContact(double contactTimeSeconds) {
@@ -158,32 +183,55 @@ public final class FixedStepVolleyballSimulator {
         );
     }
 
-    private List<PlayerBallContactEvent> detectNewPlayerContacts(
+    private PlayerContactDetectionResult detectPlayerContacts(
             List<PlayerBallContactTarget> contactTargets
     ) {
-        // Player overlap remains a discrete fixed-step sample; B4 only adds its response.
         Set<String> overlappingPlayerIds = new HashSet<>();
+        List<PlayerBallContactTarget> overlappingTargets = new ArrayList<>();
         List<PlayerBallContactEvent> newContacts = new ArrayList<>();
         for (PlayerBallContactTarget target : contactTargets) {
             if (!PlayerBallContactMath.isBallOverlappingPlayer(state.position(), target)) {
                 continue;
             }
 
+            overlappingTargets.add(target);
             if (overlappingPlayerIds.add(target.playerId())
                     && !activePlayerContactIds.contains(target.playerId())) {
-                newContacts.add(new PlayerBallContactEvent(
-                        target.playerId(),
-                        target.teamSide(),
-                        state.position(),
-                        state.velocity(),
-                        target.position()
-                ));
+                newContacts.add(toPlayerContactSnapshot(target));
             }
         }
 
         activePlayerContactIds.retainAll(overlappingPlayerIds);
         activePlayerContactIds.addAll(overlappingPlayerIds);
-        return newContacts;
+        respondedPlayerContactIds.retainAll(overlappingPlayerIds);
+        return new PlayerContactDetectionResult(overlappingTargets, newContacts);
+    }
+
+    private PlayerBallContactTarget findRespondingTarget(
+            List<PlayerBallContactTarget> overlappingTargets,
+            List<PlayerHitIntent> hitIntents
+    ) {
+        for (PlayerBallContactTarget target : overlappingTargets) {
+            if (respondedPlayerContactIds.contains(target.playerId())) {
+                continue;
+            }
+            for (PlayerHitIntent intent : hitIntents) {
+                if (intent.playerId().equals(target.playerId()) && intent.hitPressed()) {
+                    return target;
+                }
+            }
+        }
+        return null;
+    }
+
+    private PlayerBallContactEvent toPlayerContactSnapshot(PlayerBallContactTarget target) {
+        return new PlayerBallContactEvent(
+                target.playerId(),
+                target.teamSide(),
+                state.position(),
+                state.velocity(),
+                target.position()
+        );
     }
 
     private static PlayerBallContactResponseEvent toPlayerContactResponseEvent(
@@ -197,5 +245,16 @@ public final class FixedStepVolleyballSimulator {
                 contact.ballVelocity(),
                 responseState.velocity()
         );
+    }
+
+    private record PlayerContactDetectionResult(
+            List<PlayerBallContactTarget> overlappingTargets,
+            List<PlayerBallContactEvent> newContactEvents
+    ) {
+
+        private PlayerContactDetectionResult {
+            overlappingTargets = List.copyOf(overlappingTargets);
+            newContactEvents = List.copyOf(newContactEvents);
+        }
     }
 }

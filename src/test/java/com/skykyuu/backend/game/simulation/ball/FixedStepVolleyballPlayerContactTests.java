@@ -2,6 +2,7 @@ package com.skykyuu.backend.game.simulation.ball;
 
 import com.skykyuu.backend.game.court.CourtResult;
 import com.skykyuu.backend.game.court.CourtSide;
+import com.skykyuu.backend.game.simulation.input.PlayerHitIntent;
 import com.skykyuu.backend.game.simulation.player.PlayerBallContactTarget;
 import com.skykyuu.backend.game.team.TeamSide;
 import org.junit.jupiter.api.Test;
@@ -19,60 +20,67 @@ class FixedStepVolleyballPlayerContactTests {
             VolleyballSimulationConfig.FIXED_STEP_SECONDS;
 
     @Test
-    void noTargetsOverloadPreservesExistingBehavior() {
+    void oldOverloadsDelegateUsingEmptyIntentLists() {
         VolleyballState initialState = overlappingInitialState();
         FixedStepVolleyballSimulator noArgumentSimulator =
                 new FixedStepVolleyballSimulator(initialState);
-        FixedStepVolleyballSimulator emptyListSimulator =
+        FixedStepVolleyballSimulator explicitEmptySimulator =
+                new FixedStepVolleyballSimulator(initialState);
+        FixedStepVolleyballSimulator targetsSimulator =
+                new FixedStepVolleyballSimulator(initialState);
+        FixedStepVolleyballSimulator explicitTargetsSimulator =
                 new FixedStepVolleyballSimulator(initialState);
 
         BallSimulationAdvanceResult noArgumentResult = noArgumentSimulator.advance(
                 FIXED_STEP_SECONDS
         );
-        BallSimulationAdvanceResult emptyListResult = emptyListSimulator.advance(
+        BallSimulationAdvanceResult explicitEmptyResult = explicitEmptySimulator.advance(
                 FIXED_STEP_SECONDS,
+                List.of(),
+                List.of()
+        );
+        BallSimulationAdvanceResult targetsResult = targetsSimulator.advance(
+                FIXED_STEP_SECONDS,
+                List.of(overlappingPlayer())
+        );
+        BallSimulationAdvanceResult explicitTargetsResult = explicitTargetsSimulator.advance(
+                FIXED_STEP_SECONDS,
+                List.of(overlappingPlayer()),
                 List.of()
         );
 
-        assertEquals(noArgumentResult, emptyListResult);
-        assertEquals(noArgumentSimulator.getState(), emptyListSimulator.getState());
+        assertEquals(noArgumentResult, explicitEmptyResult);
+        assertEquals(noArgumentSimulator.getState(), explicitEmptySimulator.getState());
+        assertEquals(targetsResult, explicitTargetsResult);
+        assertEquals(targetsSimulator.getState(), explicitTargetsSimulator.getState());
     }
 
     @Test
-    void newPlayerContactAppliesResponseAfterIncomingEvent() {
+    void newPlayerContactWithoutHitDoesNotApplyResponse() {
         VolleyballState initialState = overlappingInitialState();
-        FixedStepVolleyballSimulator contactSimulator =
-                new FixedStepVolleyballSimulator(initialState);
+        FixedStepVolleyballSimulator simulator = new FixedStepVolleyballSimulator(initialState);
 
-        BallSimulationAdvanceResult contactResult = contactSimulator.advance(
+        BallSimulationAdvanceResult result = simulator.advance(
                 FIXED_STEP_SECONDS,
                 List.of(overlappingPlayer())
         );
 
-        VolleyballState incomingState = VolleyballSimulationMath.stepFreeFlight(
+        VolleyballState freeFlightState = VolleyballSimulationMath.stepFreeFlight(
                 initialState,
                 FIXED_STEP_SECONDS
         );
-        assertEquals(2, contactResult.events().size());
+        assertEquals(1, result.events().size());
         PlayerBallContactEvent contactEvent = assertInstanceOf(
                 PlayerBallContactEvent.class,
-                contactResult.events().get(0)
+                result.events().getFirst()
         );
-        PlayerBallContactResponseEvent responseEvent = assertInstanceOf(
-                PlayerBallContactResponseEvent.class,
-                contactResult.events().get(1)
-        );
-        assertEquals(incomingState.position(), contactEvent.ballPosition());
-        assertEquals(incomingState.velocity(), contactEvent.ballVelocity());
-        assertEquals(contactEvent.ballVelocity(), responseEvent.incomingVelocity());
-        assertEquals(incomingState.position(), contactSimulator.getState().position());
-        assertEquals(new BallVector3(0.0, 6.3, 5.0),
-                contactSimulator.getState().velocity());
-        assertEquals(contactSimulator.getState().velocity(), responseEvent.outgoingVelocity());
+        assertEquals(freeFlightState.position(), contactEvent.ballPosition());
+        assertEquals(freeFlightState.velocity(), contactEvent.ballVelocity());
+        assertEquals(freeFlightState, simulator.getState());
     }
 
     @Test
-    void emitsSingleEventWhileOverlapRemainsActiveAcrossSteps() {
+    void emitsSingleContactWhileOverlapRemainsActiveAcrossSteps() {
         FixedStepVolleyballSimulator simulator = new FixedStepVolleyballSimulator(
                 overlappingInitialState()
         );
@@ -83,13 +91,12 @@ class FixedStepVolleyballPlayerContactTests {
         );
 
         assertEquals(3, result.executedSteps());
-        assertEquals(2, result.events().size());
-        assertInstanceOf(PlayerBallContactEvent.class, result.events().get(0));
-        assertInstanceOf(PlayerBallContactResponseEvent.class, result.events().get(1));
+        assertEquals(1, result.events().size());
+        assertInstanceOf(PlayerBallContactEvent.class, result.events().getFirst());
     }
 
     @Test
-    void emitsAgainAfterPlayerLeavesAndReentersOverlap() {
+    void emitsContactAgainAfterPlayerLeavesAndReentersOverlap() {
         FixedStepVolleyballSimulator simulator = new FixedStepVolleyballSimulator(
                 overlappingInitialState()
         );
@@ -113,11 +120,10 @@ class FixedStepVolleyballPlayerContactTests {
                 List.of(overlappingPlayer)
         );
 
-        assertEquals(2, entry.events().size());
+        assertEquals(1, entry.events().size());
         assertTrue(leave.events().isEmpty());
-        assertEquals(2, reentry.events().size());
-        assertInstanceOf(PlayerBallContactEvent.class, reentry.events().get(0));
-        assertInstanceOf(PlayerBallContactResponseEvent.class, reentry.events().get(1));
+        assertEquals(1, reentry.events().size());
+        assertInstanceOf(PlayerBallContactEvent.class, reentry.events().getFirst());
     }
 
     @Test
@@ -137,13 +143,12 @@ class FixedStepVolleyballPlayerContactTests {
                 List.of(farPlayer, overlappingPlayer)
         );
 
-        assertEquals(2, result.events().size());
+        assertEquals(1, result.events().size());
         PlayerBallContactEvent event = assertInstanceOf(
                 PlayerBallContactEvent.class,
-                result.events().get(0)
+                result.events().getFirst()
         );
         assertEquals(overlappingPlayer.playerId(), event.playerId());
-        assertInstanceOf(PlayerBallContactResponseEvent.class, result.events().get(1));
     }
 
     @Test
@@ -159,14 +164,12 @@ class FixedStepVolleyballPlayerContactTests {
                 List.of(player)
         );
 
-        assertEquals(2, resultAfterReset.events().size());
-        assertInstanceOf(PlayerBallContactEvent.class, resultAfterReset.events().get(0));
-        assertInstanceOf(PlayerBallContactResponseEvent.class,
-                resultAfterReset.events().get(1));
+        assertEquals(1, resultAfterReset.events().size());
+        assertInstanceOf(PlayerBallContactEvent.class, resultAfterReset.events().getFirst());
     }
 
     @Test
-    void emitsPlayerContactBeforeGroundContactWithinImpactStep() {
+    void groundContactRemainsTerminalEvenWithPressedHit() {
         VolleyballState initialState = new VolleyballState(
                 new BallVector3(0.0, VolleyballConfig.RADIUS_METERS + 0.01, 0.0),
                 new BallVector3(0.0, -1.0, 0.0)
@@ -175,7 +178,8 @@ class FixedStepVolleyballPlayerContactTests {
 
         BallSimulationAdvanceResult result = simulator.advance(
                 FIXED_STEP_SECONDS,
-                List.of(overlappingPlayer())
+                List.of(overlappingPlayer()),
+                List.of(pressedIntent("player-a"))
         );
 
         assertEquals(2, result.events().size());
@@ -193,7 +197,7 @@ class FixedStepVolleyballPlayerContactTests {
     }
 
     @Test
-    void frontendPreviewRespondsTowardSideAAndLandsIn() {
+    void frontendPreviewWithoutHitLandsInOnSideB() {
         VolleyballState initialState = new VolleyballState(
                 new BallVector3(0.0, 3.0, -3.0),
                 new BallVector3(0.0, 4.5, 6.0)
@@ -203,50 +207,36 @@ class FixedStepVolleyballPlayerContactTests {
                 TeamSide.B,
                 new BallVector3(0.0, 0.0, 4.5)
         );
-        FixedStepVolleyballSimulator contactSimulator =
-                new FixedStepVolleyballSimulator(initialState);
+        FixedStepVolleyballSimulator simulator = new FixedStepVolleyballSimulator(initialState);
         List<BallSimulationEvent> events = new ArrayList<>();
-        boolean crossedCenterBeforeGround = false;
 
-        for (int step = 0; step < 180 && !contactSimulator.hasGroundContactOccurred(); step++) {
-            BallSimulationAdvanceResult contactResult = contactSimulator.advance(
+        for (int step = 0; step < 180 && !simulator.hasGroundContactOccurred(); step++) {
+            events.addAll(simulator.advance(
                     FIXED_STEP_SECONDS,
                     List.of(playerB)
-            );
-            events.addAll(contactResult.events());
-            if (!contactSimulator.hasGroundContactOccurred()
-                    && contactSimulator.getState().position().z() <= 0.0) {
-                crossedCenterBeforeGround = true;
-            }
+            ).events());
         }
 
-        assertTrue(contactSimulator.hasGroundContactOccurred());
-        assertTrue(crossedCenterBeforeGround);
-        assertEquals(3, events.size());
+        assertTrue(simulator.hasGroundContactOccurred());
+        assertEquals(2, events.size());
         PlayerBallContactEvent playerEvent = assertInstanceOf(
                 PlayerBallContactEvent.class,
                 events.get(0)
         );
-        PlayerBallContactResponseEvent responseEvent = assertInstanceOf(
-                PlayerBallContactResponseEvent.class,
-                events.get(1)
-        );
         BallGroundContactEvent groundEvent = assertInstanceOf(
                 BallGroundContactEvent.class,
-                events.get(2)
+                events.get(1)
         );
         assertEquals("player-b", playerEvent.playerId());
         assertEquals(TeamSide.B, playerEvent.teamSide());
         assertEquals(playerB.position(), playerEvent.playerPosition());
-        assertEquals(TeamSide.B, responseEvent.teamSide());
-        assertEquals(6.3, responseEvent.outgoingVelocity().y());
-        assertEquals(-5.0, responseEvent.outgoingVelocity().z());
         assertEquals(CourtResult.IN, groundEvent.courtResult());
-        assertEquals(CourtSide.A, groundEvent.courtSide());
+        assertEquals(CourtSide.B, groundEvent.courtSide());
+        assertTrue(events.stream().noneMatch(PlayerBallContactResponseEvent.class::isInstance));
     }
 
     @Test
-    void incomingContactEventKeepsPreResponseVerticalVelocity() {
+    void hitOnEntryKeepsPreResponseVerticalVelocity() {
         double gravity = VolleyballSimulationConfig.GRAVITY_METERS_PER_SECOND_SQUARED;
         VolleyballState initialState = new VolleyballState(
                 new BallVector3(0.0, 1.0, 0.0),
@@ -256,19 +246,26 @@ class FixedStepVolleyballPlayerContactTests {
 
         BallSimulationAdvanceResult result = simulator.advance(
                 FIXED_STEP_SECONDS,
-                List.of(overlappingPlayer())
+                List.of(overlappingPlayer()),
+                List.of(pressedIntent("player-a"))
         );
 
+        assertEquals(2, result.events().size());
         PlayerBallContactEvent contactEvent = assertInstanceOf(
                 PlayerBallContactEvent.class,
                 result.events().get(0)
         );
+        PlayerBallContactResponseEvent responseEvent = assertInstanceOf(
+                PlayerBallContactResponseEvent.class,
+                result.events().get(1)
+        );
         assertEquals(-3.0, contactEvent.ballVelocity().y(), 1.0e-12);
+        assertEquals(contactEvent.ballVelocity(), responseEvent.incomingVelocity());
         assertEquals(6.3, simulator.getState().velocity().y());
     }
 
     @Test
-    void multipleNewContactsEmitAllButRespondOnlyToFirstTarget() {
+    void multipleNewContactsEmitAllButRespondOnlyToFirstEligibleTarget() {
         FixedStepVolleyballSimulator simulator = new FixedStepVolleyballSimulator(
                 overlappingInitialState()
         );
@@ -285,7 +282,11 @@ class FixedStepVolleyballPlayerContactTests {
 
         BallSimulationAdvanceResult result = simulator.advance(
                 FIXED_STEP_SECONDS,
-                List.of(firstTarget, secondTarget)
+                List.of(firstTarget, secondTarget),
+                List.of(
+                        pressedIntent("first-player"),
+                        pressedIntent("second-player")
+                )
         );
 
         assertEquals(3, result.events().size());
@@ -321,5 +322,9 @@ class FixedStepVolleyballPlayerContactTests {
                 TeamSide.A,
                 new BallVector3(0.0, 0.0, 0.0)
         );
+    }
+
+    private static PlayerHitIntent pressedIntent(String playerId) {
+        return new PlayerHitIntent(playerId, true, true);
     }
 }
