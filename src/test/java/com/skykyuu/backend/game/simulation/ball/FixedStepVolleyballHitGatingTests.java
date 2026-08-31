@@ -181,7 +181,7 @@ class FixedStepVolleyballHitGatingTests {
     }
 
     @Test
-    void pressedHitBeforeOverlapIsNotBuffered() {
+    void pressedHitBeforeOverlapIsBufferedForTheNextStep() {
         FixedStepVolleyballSimulator simulator = new FixedStepVolleyballSimulator(
                 overlappingInitialState()
         );
@@ -204,8 +204,9 @@ class FixedStepVolleyballHitGatingTests {
         );
 
         assertTrue(earlyHit.events().isEmpty());
-        assertEquals(1, entry.events().size());
-        assertInstanceOf(PlayerBallContactEvent.class, entry.events().getFirst());
+        assertEquals(2, entry.events().size());
+        assertInstanceOf(PlayerBallContactEvent.class, entry.events().get(0));
+        assertInstanceOf(PlayerBallContactResponseEvent.class, entry.events().get(1));
     }
 
     @Test

@@ -3,14 +3,18 @@ package com.skykyuu.backend.game.simulation.ball;
 import com.skykyuu.backend.game.court.CourtResult;
 import com.skykyuu.backend.game.court.CourtSide;
 import com.skykyuu.backend.game.court.IndoorCourtClassifier;
+import com.skykyuu.backend.game.simulation.input.PlayerHitBufferConfig;
 import com.skykyuu.backend.game.simulation.input.PlayerHitIntent;
 import com.skykyuu.backend.game.simulation.player.PlayerBallContactMath;
 import com.skykyuu.backend.game.simulation.player.PlayerBallContactResponseMath;
 import com.skykyuu.backend.game.simulation.player.PlayerBallContactTarget;
 
 import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.HashSet;
+import java.util.Iterator;
 import java.util.List;
+import java.util.Map;
 import java.util.Objects;
 import java.util.OptionalDouble;
 import java.util.Set;
@@ -25,6 +29,7 @@ public final class FixedStepVolleyballSimulator {
     private boolean groundContactOccurred;
     private final Set<String> activePlayerContactIds = new HashSet<>();
     private final Set<String> respondedPlayerContactIds = new HashSet<>();
+    private final Map<String, Double> hitBufferRemainingSecondsByPlayer = new HashMap<>();
 
     public FixedStepVolleyballSimulator(VolleyballState initialState) {
         state = Objects.requireNonNull(initialState, "initialState must not be null");
@@ -58,9 +63,13 @@ public final class FixedStepVolleyballSimulator {
                         "playerHitIntents must not be null"
                 )
         );
-        if (groundContactOccurred
-                || !Double.isFinite(frameDeltaSeconds)
-                || frameDeltaSeconds <= 0.0) {
+        if (groundContactOccurred) {
+            return BallSimulationAdvanceResult.empty();
+        }
+
+        armHitBuffers(hitIntents);
+
+        if (!Double.isFinite(frameDeltaSeconds) || frameDeltaSeconds <= 0.0) {
             return BallSimulationAdvanceResult.empty();
         }
 
@@ -87,6 +96,7 @@ public final class FixedStepVolleyballSimulator {
                 events.add(toGroundContactEvent(state));
                 groundContactOccurred = true;
                 accumulatorSeconds = 0.0;
+                hitBufferRemainingSecondsByPlayer.clear();
             } else {
                 state = VolleyballSimulationMath.stepFreeFlight(
                         state,
@@ -96,8 +106,7 @@ public final class FixedStepVolleyballSimulator {
                 events.addAll(contacts.newContactEvents());
 
                 PlayerBallContactTarget respondingTarget = findRespondingTarget(
-                        contacts.overlappingTargets(),
-                        hitIntents
+                        contacts.overlappingTargets()
                 );
                 if (respondingTarget != null) {
                     PlayerBallContactEvent responseContact = toPlayerContactSnapshot(
@@ -109,8 +118,10 @@ public final class FixedStepVolleyballSimulator {
                     );
                     events.add(toPlayerContactResponseEvent(responseContact, state));
                     respondedPlayerContactIds.add(respondingTarget.playerId());
+                    hitBufferRemainingSecondsByPlayer.remove(respondingTarget.playerId());
                 }
 
+                decayHitBuffers();
                 accumulatorSeconds -= VolleyballSimulationConfig.FIXED_STEP_SECONDS;
                 if (accumulatorSeconds < 0.0
                         && accumulatorSeconds > -ACCUMULATOR_EPSILON_SECONDS) {
@@ -152,6 +163,7 @@ public final class FixedStepVolleyballSimulator {
         groundContactOccurred = false;
         activePlayerContactIds.clear();
         respondedPlayerContactIds.clear();
+        hitBufferRemainingSecondsByPlayer.clear();
     }
 
     private VolleyballState stateAtGroundContact(double contactTimeSeconds) {
@@ -208,20 +220,56 @@ public final class FixedStepVolleyballSimulator {
     }
 
     private PlayerBallContactTarget findRespondingTarget(
-            List<PlayerBallContactTarget> overlappingTargets,
-            List<PlayerHitIntent> hitIntents
+            List<PlayerBallContactTarget> overlappingTargets
     ) {
         for (PlayerBallContactTarget target : overlappingTargets) {
             if (respondedPlayerContactIds.contains(target.playerId())) {
                 continue;
             }
-            for (PlayerHitIntent intent : hitIntents) {
-                if (intent.playerId().equals(target.playerId()) && intent.hitPressed()) {
-                    return target;
-                }
+            double remainingSeconds = hitBufferRemainingSecondsByPlayer.getOrDefault(
+                    target.playerId(),
+                    0.0
+            );
+            if (remainingSeconds > 0.0) {
+                return target;
             }
         }
         return null;
+    }
+
+    private void armHitBuffers(List<PlayerHitIntent> hitIntents) {
+        for (PlayerHitIntent intent : hitIntents) {
+            if (!intent.hitPressed()) {
+                continue;
+            }
+
+            String playerId = intent.playerId();
+            if (respondedPlayerContactIds.contains(playerId)
+                    && activePlayerContactIds.contains(playerId)) {
+                hitBufferRemainingSecondsByPlayer.remove(playerId);
+                continue;
+            }
+
+            hitBufferRemainingSecondsByPlayer.put(
+                    playerId,
+                    PlayerHitBufferConfig.DURATION_SECONDS
+            );
+        }
+    }
+
+    private void decayHitBuffers() {
+        Iterator<Map.Entry<String, Double>> iterator =
+                hitBufferRemainingSecondsByPlayer.entrySet().iterator();
+        while (iterator.hasNext()) {
+            Map.Entry<String, Double> entry = iterator.next();
+            double remainingSeconds = entry.getValue()
+                    - VolleyballSimulationConfig.FIXED_STEP_SECONDS;
+            if (remainingSeconds <= ACCUMULATOR_EPSILON_SECONDS) {
+                iterator.remove();
+            } else {
+                entry.setValue(remainingSeconds);
+            }
+        }
     }
 
     private PlayerBallContactEvent toPlayerContactSnapshot(PlayerBallContactTarget target) {
