@@ -1,5 +1,6 @@
 package com.skykyuu.backend.game.simulation.ball;
 
+import com.skykyuu.backend.game.simulation.player.PlayerHitTimingGrade;
 import com.skykyuu.backend.game.team.TeamSide;
 import org.junit.jupiter.api.Test;
 
@@ -21,7 +22,8 @@ class PlayerBallContactResponseEventTests {
                 incomingVelocity,
                 outgoingVelocity,
                 -2L,
-                -2.0 / 60.0
+                -2.0 / 60.0,
+                PlayerHitTimingGrade.EARLY
         );
 
         assertEquals("player-b", event.playerId());
@@ -31,6 +33,7 @@ class PlayerBallContactResponseEventTests {
         assertEquals(outgoingVelocity, event.outgoingVelocity());
         assertEquals(-2L, event.hitTimingOffsetSteps());
         assertEquals(-2.0 / 60.0, event.hitTimingOffsetSeconds());
+        assertEquals(PlayerHitTimingGrade.EARLY, event.hitTimingGrade());
     }
 
     @Test
@@ -40,27 +43,32 @@ class PlayerBallContactResponseEventTests {
         assertThrows(
                 NullPointerException.class,
                 () -> new PlayerBallContactResponseEvent(null, TeamSide.A,
-                        vector, vector, vector, 0L, 0.0)
+                        vector, vector, vector, 0L, 0.0, PlayerHitTimingGrade.PERFECT)
         );
         assertThrows(
                 NullPointerException.class,
                 () -> new PlayerBallContactResponseEvent("player", null,
-                        vector, vector, vector, 0L, 0.0)
+                        vector, vector, vector, 0L, 0.0, PlayerHitTimingGrade.PERFECT)
         );
         assertThrows(
                 NullPointerException.class,
                 () -> new PlayerBallContactResponseEvent("player", TeamSide.A,
-                        null, vector, vector, 0L, 0.0)
+                        null, vector, vector, 0L, 0.0, PlayerHitTimingGrade.PERFECT)
         );
         assertThrows(
                 NullPointerException.class,
                 () -> new PlayerBallContactResponseEvent("player", TeamSide.A,
-                        vector, null, vector, 0L, 0.0)
+                        vector, null, vector, 0L, 0.0, PlayerHitTimingGrade.PERFECT)
         );
         assertThrows(
                 NullPointerException.class,
                 () -> new PlayerBallContactResponseEvent("player", TeamSide.A,
-                        vector, vector, null, 0L, 0.0)
+                        vector, vector, null, 0L, 0.0, PlayerHitTimingGrade.PERFECT)
+        );
+        assertThrows(
+                NullPointerException.class,
+                () -> new PlayerBallContactResponseEvent("player", TeamSide.A,
+                        vector, vector, vector, 0L, 0.0, null)
         );
     }
 }

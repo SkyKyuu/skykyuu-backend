@@ -4,6 +4,7 @@ import com.skykyuu.backend.game.court.CourtResult;
 import com.skykyuu.backend.game.court.CourtSide;
 import com.skykyuu.backend.game.simulation.input.PlayerHitIntent;
 import com.skykyuu.backend.game.simulation.player.PlayerBallContactTarget;
+import com.skykyuu.backend.game.simulation.player.PlayerHitTimingGrade;
 import com.skykyuu.backend.game.team.TeamSide;
 import org.junit.jupiter.api.Test;
 
@@ -313,7 +314,9 @@ class FixedStepVolleyballHitTimingTests {
         );
 
         assertEquals(1, entry.events().size());
-        assertTiming(responseEvent(lateHit), 1L);
+        PlayerBallContactResponseEvent response = responseEvent(lateHit);
+        assertTiming(response, 1L);
+        assertEquals(PlayerHitTimingGrade.LATE, response.hitTimingGrade());
     }
 
     @Test
@@ -344,6 +347,7 @@ class FixedStepVolleyballHitTimingTests {
         PlayerBallContactResponseEvent response = responseEvent(result);
         assertEquals("player-b", response.playerId());
         assertTiming(response, -1L);
+        assertEquals(PlayerHitTimingGrade.EARLY, response.hitTimingGrade());
         assertEquals(-5.0, response.outgoingVelocity().z());
     }
 
@@ -407,6 +411,7 @@ class FixedStepVolleyballHitTimingTests {
                 events.get(2)
         );
         assertTiming(response, -3L);
+        assertEquals(PlayerHitTimingGrade.EARLY, response.hitTimingGrade());
         assertEquals(6.3, response.outgoingVelocity().y());
         assertEquals(-5.0, response.outgoingVelocity().z());
         assertEquals(CourtResult.IN, ground.courtResult());

@@ -1,5 +1,6 @@
 package com.skykyuu.backend.game.simulation.ball;
 
+import com.skykyuu.backend.game.simulation.player.PlayerHitTimingGrade;
 import com.skykyuu.backend.game.team.TeamSide;
 
 import java.util.Objects;
@@ -11,7 +12,8 @@ public record PlayerBallContactResponseEvent(
         BallVector3 incomingVelocity,
         BallVector3 outgoingVelocity,
         long hitTimingOffsetSteps,
-        double hitTimingOffsetSeconds
+        double hitTimingOffsetSeconds,
+        PlayerHitTimingGrade hitTimingGrade
 ) implements BallSimulationEvent {
 
     public PlayerBallContactResponseEvent {
@@ -20,5 +22,6 @@ public record PlayerBallContactResponseEvent(
         Objects.requireNonNull(ballPosition, "ballPosition must not be null");
         Objects.requireNonNull(incomingVelocity, "incomingVelocity must not be null");
         Objects.requireNonNull(outgoingVelocity, "outgoingVelocity must not be null");
+        Objects.requireNonNull(hitTimingGrade, "hitTimingGrade must not be null");
     }
 }
