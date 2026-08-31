@@ -8,6 +8,8 @@ import com.skykyuu.backend.game.simulation.input.PlayerHitIntent;
 import com.skykyuu.backend.game.simulation.player.PlayerBallContactMath;
 import com.skykyuu.backend.game.simulation.player.PlayerBallContactResponseMath;
 import com.skykyuu.backend.game.simulation.player.PlayerBallContactTarget;
+import com.skykyuu.backend.game.simulation.player.PlayerHitTimingMath;
+import com.skykyuu.backend.game.simulation.player.PlayerHitTimingSample;
 
 import java.util.ArrayList;
 import java.util.HashMap;
@@ -30,6 +32,8 @@ public final class FixedStepVolleyballSimulator {
     private final Set<String> activePlayerContactIds = new HashSet<>();
     private final Set<String> respondedPlayerContactIds = new HashSet<>();
     private final Map<String, Double> hitBufferRemainingSecondsByPlayer = new HashMap<>();
+    private final Map<String, Long> hitPressStepByPlayer = new HashMap<>();
+    private final Map<String, Long> contactEntryStepByPlayer = new HashMap<>();
 
     public FixedStepVolleyballSimulator(VolleyballState initialState) {
         state = Objects.requireNonNull(initialState, "initialState must not be null");
@@ -97,6 +101,8 @@ public final class FixedStepVolleyballSimulator {
                 groundContactOccurred = true;
                 accumulatorSeconds = 0.0;
                 hitBufferRemainingSecondsByPlayer.clear();
+                hitPressStepByPlayer.clear();
+                contactEntryStepByPlayer.clear();
             } else {
                 state = VolleyballSimulationMath.stepFreeFlight(
                         state,
@@ -109,6 +115,9 @@ public final class FixedStepVolleyballSimulator {
                         contacts.overlappingTargets()
                 );
                 if (respondingTarget != null) {
+                    PlayerHitTimingSample timing = createHitTimingSample(
+                            respondingTarget.playerId()
+                    );
                     PlayerBallContactEvent responseContact = toPlayerContactSnapshot(
                             respondingTarget
                     );
@@ -116,9 +125,10 @@ public final class FixedStepVolleyballSimulator {
                             state,
                             responseContact
                     );
-                    events.add(toPlayerContactResponseEvent(responseContact, state));
+                    events.add(toPlayerContactResponseEvent(responseContact, state, timing));
                     respondedPlayerContactIds.add(respondingTarget.playerId());
                     hitBufferRemainingSecondsByPlayer.remove(respondingTarget.playerId());
+                    hitPressStepByPlayer.remove(respondingTarget.playerId());
                 }
 
                 decayHitBuffers();
@@ -164,6 +174,8 @@ public final class FixedStepVolleyballSimulator {
         activePlayerContactIds.clear();
         respondedPlayerContactIds.clear();
         hitBufferRemainingSecondsByPlayer.clear();
+        hitPressStepByPlayer.clear();
+        contactEntryStepByPlayer.clear();
     }
 
     private VolleyballState stateAtGroundContact(double contactTimeSeconds) {
@@ -210,12 +222,14 @@ public final class FixedStepVolleyballSimulator {
             if (overlappingPlayerIds.add(target.playerId())
                     && !activePlayerContactIds.contains(target.playerId())) {
                 newContacts.add(toPlayerContactSnapshot(target));
+                contactEntryStepByPlayer.put(target.playerId(), totalSimulationSteps);
             }
         }
 
         activePlayerContactIds.retainAll(overlappingPlayerIds);
         activePlayerContactIds.addAll(overlappingPlayerIds);
         respondedPlayerContactIds.retainAll(overlappingPlayerIds);
+        contactEntryStepByPlayer.keySet().retainAll(overlappingPlayerIds);
         return new PlayerContactDetectionResult(overlappingTargets, newContacts);
     }
 
@@ -247,6 +261,7 @@ public final class FixedStepVolleyballSimulator {
             if (respondedPlayerContactIds.contains(playerId)
                     && activePlayerContactIds.contains(playerId)) {
                 hitBufferRemainingSecondsByPlayer.remove(playerId);
+                hitPressStepByPlayer.remove(playerId);
                 continue;
             }
 
@@ -254,6 +269,7 @@ public final class FixedStepVolleyballSimulator {
                     playerId,
                     PlayerHitBufferConfig.DURATION_SECONDS
             );
+            hitPressStepByPlayer.put(playerId, totalSimulationSteps);
         }
     }
 
@@ -262,14 +278,31 @@ public final class FixedStepVolleyballSimulator {
                 hitBufferRemainingSecondsByPlayer.entrySet().iterator();
         while (iterator.hasNext()) {
             Map.Entry<String, Double> entry = iterator.next();
+            String playerId = entry.getKey();
             double remainingSeconds = entry.getValue()
                     - VolleyballSimulationConfig.FIXED_STEP_SECONDS;
             if (remainingSeconds <= ACCUMULATOR_EPSILON_SECONDS) {
                 iterator.remove();
+                hitPressStepByPlayer.remove(playerId);
             } else {
                 entry.setValue(remainingSeconds);
             }
         }
+    }
+
+    private PlayerHitTimingSample createHitTimingSample(String playerId) {
+        Long pressStep = hitPressStepByPlayer.get(playerId);
+        Long contactEntryStep = contactEntryStepByPlayer.get(playerId);
+        if (pressStep == null || contactEntryStep == null) {
+            throw new IllegalStateException(
+                    "Missing hit timing state for responding playerId: " + playerId
+            );
+        }
+        return PlayerHitTimingMath.create(
+                pressStep,
+                contactEntryStep,
+                VolleyballSimulationConfig.FIXED_STEP_SECONDS
+        );
     }
 
     private PlayerBallContactEvent toPlayerContactSnapshot(PlayerBallContactTarget target) {
@@ -284,14 +317,17 @@ public final class FixedStepVolleyballSimulator {
 
     private static PlayerBallContactResponseEvent toPlayerContactResponseEvent(
             PlayerBallContactEvent contact,
-            VolleyballState responseState
+            VolleyballState responseState,
+            PlayerHitTimingSample timing
     ) {
         return new PlayerBallContactResponseEvent(
                 contact.playerId(),
                 contact.teamSide(),
                 contact.ballPosition(),
                 contact.ballVelocity(),
-                responseState.velocity()
+                responseState.velocity(),
+                timing.offsetSteps(),
+                timing.offsetSeconds()
         );
     }
 
