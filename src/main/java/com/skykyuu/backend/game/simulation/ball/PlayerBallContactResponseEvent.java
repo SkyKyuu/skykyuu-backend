@@ -9,7 +9,9 @@ public record PlayerBallContactResponseEvent(
         TeamSide teamSide,
         BallVector3 ballPosition,
         BallVector3 incomingVelocity,
-        BallVector3 outgoingVelocity
+        BallVector3 outgoingVelocity,
+        long hitTimingOffsetSteps,
+        double hitTimingOffsetSeconds
 ) implements BallSimulationEvent {
 
     public PlayerBallContactResponseEvent {

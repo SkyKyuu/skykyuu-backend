@@ -19,7 +19,9 @@ class PlayerBallContactResponseEventTests {
                 TeamSide.B,
                 position,
                 incomingVelocity,
-                outgoingVelocity
+                outgoingVelocity,
+                -2L,
+                -2.0 / 60.0
         );
 
         assertEquals("player-b", event.playerId());
@@ -27,6 +29,8 @@ class PlayerBallContactResponseEventTests {
         assertEquals(position, event.ballPosition());
         assertEquals(incomingVelocity, event.incomingVelocity());
         assertEquals(outgoingVelocity, event.outgoingVelocity());
+        assertEquals(-2L, event.hitTimingOffsetSteps());
+        assertEquals(-2.0 / 60.0, event.hitTimingOffsetSeconds());
     }
 
     @Test
@@ -36,27 +40,27 @@ class PlayerBallContactResponseEventTests {
         assertThrows(
                 NullPointerException.class,
                 () -> new PlayerBallContactResponseEvent(null, TeamSide.A,
-                        vector, vector, vector)
+                        vector, vector, vector, 0L, 0.0)
         );
         assertThrows(
                 NullPointerException.class,
                 () -> new PlayerBallContactResponseEvent("player", null,
-                        vector, vector, vector)
+                        vector, vector, vector, 0L, 0.0)
         );
         assertThrows(
                 NullPointerException.class,
                 () -> new PlayerBallContactResponseEvent("player", TeamSide.A,
-                        null, vector, vector)
+                        null, vector, vector, 0L, 0.0)
         );
         assertThrows(
                 NullPointerException.class,
                 () -> new PlayerBallContactResponseEvent("player", TeamSide.A,
-                        vector, null, vector)
+                        vector, null, vector, 0L, 0.0)
         );
         assertThrows(
                 NullPointerException.class,
                 () -> new PlayerBallContactResponseEvent("player", TeamSide.A,
-                        vector, vector, null)
+                        vector, vector, null, 0L, 0.0)
         );
     }
 }
