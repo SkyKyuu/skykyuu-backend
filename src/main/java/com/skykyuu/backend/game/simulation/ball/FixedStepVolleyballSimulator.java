@@ -9,6 +9,7 @@ import com.skykyuu.backend.game.simulation.player.PlayerBallContactMath;
 import com.skykyuu.backend.game.simulation.player.PlayerBallContactResponseMath;
 import com.skykyuu.backend.game.simulation.player.PlayerBallContactTarget;
 import com.skykyuu.backend.game.simulation.player.PlayerHitAim;
+import com.skykyuu.backend.game.simulation.player.PlayerHitAimMath;
 import com.skykyuu.backend.game.simulation.player.PlayerHitTimingGrade;
 import com.skykyuu.backend.game.simulation.player.PlayerHitTimingGradeClassifier;
 import com.skykyuu.backend.game.simulation.player.PlayerHitTimingMath;
@@ -124,6 +125,14 @@ public final class FixedStepVolleyballSimulator {
                     double hitAimLateral = getResponseHitAimLateral(
                             respondingTarget.playerId()
                     );
+                    double hitAimWorldX = PlayerHitAimMath.lateralToWorldX(
+                            respondingTarget.teamSide(),
+                            hitAimLateral
+                    );
+                    double hitAimVelocityX = PlayerHitAimMath.getVelocityXContribution(
+                            respondingTarget.teamSide(),
+                            hitAimLateral
+                    );
                     PlayerHitTimingSample timing = createHitTimingSample(
                             respondingTarget.playerId()
                     );
@@ -137,7 +146,8 @@ public final class FixedStepVolleyballSimulator {
                     state = PlayerBallContactResponseMath.applyPlayerContactResponse(
                             state,
                             responseContact,
-                            timingGrade
+                            timingGrade,
+                            hitAimLateral
                     );
                     events.add(toPlayerContactResponseEvent(
                             responseContact,
@@ -145,7 +155,9 @@ public final class FixedStepVolleyballSimulator {
                             timing,
                             timingGrade,
                             forwardMultiplier,
-                            hitAimLateral
+                            hitAimLateral,
+                            hitAimWorldX,
+                            hitAimVelocityX
                     ));
                     respondedPlayerContactIds.add(respondingTarget.playerId());
                     hitBufferRemainingSecondsByPlayer.remove(respondingTarget.playerId());
@@ -358,7 +370,9 @@ public final class FixedStepVolleyballSimulator {
             PlayerHitTimingSample timing,
             PlayerHitTimingGrade timingGrade,
             double forwardMultiplier,
-            double hitAimLateral
+            double hitAimLateral,
+            double hitAimWorldX,
+            double hitAimVelocityX
     ) {
         return new PlayerBallContactResponseEvent(
                 contact.playerId(),
@@ -370,7 +384,9 @@ public final class FixedStepVolleyballSimulator {
                 timing.offsetSeconds(),
                 timingGrade,
                 forwardMultiplier,
-                hitAimLateral
+                hitAimLateral,
+                hitAimWorldX,
+                hitAimVelocityX
         );
     }
 
