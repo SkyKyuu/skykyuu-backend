@@ -273,8 +273,9 @@ class FixedStepVolleyballHitGatingTests {
                 events.get(2)
         );
         assertEquals("player-b", response.playerId());
+        assertEquals(0.90, response.hitTimingForwardMultiplier());
         assertEquals(6.3, response.outgoingVelocity().y());
-        assertEquals(-5.0, response.outgoingVelocity().z());
+        assertEquals(-4.5, response.outgoingVelocity().z());
         assertEquals(CourtResult.IN, ground.courtResult());
         assertEquals(CourtSide.A, ground.courtSide());
     }

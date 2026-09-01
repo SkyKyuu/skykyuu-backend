@@ -13,7 +13,8 @@ public record PlayerBallContactResponseEvent(
         BallVector3 outgoingVelocity,
         long hitTimingOffsetSteps,
         double hitTimingOffsetSeconds,
-        PlayerHitTimingGrade hitTimingGrade
+        PlayerHitTimingGrade hitTimingGrade,
+        double hitTimingForwardMultiplier
 ) implements BallSimulationEvent {
 
     public PlayerBallContactResponseEvent {
