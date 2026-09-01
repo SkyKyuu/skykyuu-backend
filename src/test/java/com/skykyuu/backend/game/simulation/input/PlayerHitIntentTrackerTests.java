@@ -23,10 +23,26 @@ class PlayerHitIntentTrackerTests {
 
     @Test
     void initialHeldStateIsPressed() {
-        PlayerHitIntent intent = tracker.update(new PlayerHitInput("player-1", true));
+        PlayerHitIntent intent = tracker.update(
+                new PlayerHitInput("player-1", true, -0.75)
+        );
 
         assertTrue(intent.hitHeld());
         assertTrue(intent.hitPressed());
+        assertEquals(-0.75, intent.aimLateral());
+    }
+
+    @Test
+    void heldButtonPropagatesCurrentAimWithoutCreatingAnotherPressedEdge() {
+        tracker.update(new PlayerHitInput("player-1", true, -0.75));
+
+        PlayerHitIntent held = tracker.update(
+                new PlayerHitInput("player-1", true, 0.75)
+        );
+
+        assertTrue(held.hitHeld());
+        assertFalse(held.hitPressed());
+        assertEquals(0.75, held.aimLateral());
     }
 
     @Test
@@ -77,14 +93,18 @@ class PlayerHitIntentTrackerTests {
     @Test
     void updateAllPreservesOrderAndReturnsImmutableList() {
         List<PlayerHitIntent> intents = tracker.updateAll(List.of(
-                new PlayerHitInput("player-3", true),
-                new PlayerHitInput("player-1", false),
-                new PlayerHitInput("player-2", true)
+                new PlayerHitInput("player-3", true, -1.0),
+                new PlayerHitInput("player-1", false, 0.25),
+                new PlayerHitInput("player-2", true, 0.75)
         ));
 
         assertEquals(
                 List.of("player-3", "player-1", "player-2"),
                 intents.stream().map(PlayerHitIntent::playerId).toList()
+        );
+        assertEquals(
+                List.of(-1.0, 0.25, 0.75),
+                intents.stream().map(PlayerHitIntent::aimLateral).toList()
         );
         assertThrows(
                 UnsupportedOperationException.class,

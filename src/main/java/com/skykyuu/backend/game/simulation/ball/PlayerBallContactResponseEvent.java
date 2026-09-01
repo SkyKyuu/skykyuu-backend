@@ -14,7 +14,8 @@ public record PlayerBallContactResponseEvent(
         long hitTimingOffsetSteps,
         double hitTimingOffsetSeconds,
         PlayerHitTimingGrade hitTimingGrade,
-        double hitTimingForwardMultiplier
+        double hitTimingForwardMultiplier,
+        double hitAimLateral
 ) implements BallSimulationEvent {
 
     public PlayerBallContactResponseEvent {
