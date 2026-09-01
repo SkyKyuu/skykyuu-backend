@@ -306,6 +306,7 @@ class FixedStepVolleyballPlayerContactTests {
         assertEquals("second-player", secondContact.playerId());
         assertEquals("first-player", response.playerId());
         assertEquals(TeamSide.B, response.teamSide());
+        assertEquals(1.0, response.hitTimingForwardMultiplier());
         assertEquals(-5.0, response.outgoingVelocity().z());
     }
 

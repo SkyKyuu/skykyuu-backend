@@ -16,12 +16,27 @@ public final class PlayerBallContactResponseMath {
             BallVector3 incomingVelocity,
             TeamSide teamSide
     ) {
+        return getPlayerContactResponseVelocity(
+                incomingVelocity,
+                teamSide,
+                PlayerHitTimingGrade.PERFECT
+        );
+    }
+
+    public static BallVector3 getPlayerContactResponseVelocity(
+            BallVector3 incomingVelocity,
+            TeamSide teamSide,
+            PlayerHitTimingGrade timingGrade
+    ) {
         Objects.requireNonNull(incomingVelocity, "incomingVelocity must not be null");
         Objects.requireNonNull(teamSide, "teamSide must not be null");
 
+        double forwardMagnitude =
+                PlayerBallContactResponseConfig.FORWARD_VELOCITY_METERS_PER_SECOND
+                        * PlayerHitTimingPower.getForwardMultiplier(timingGrade);
         double forwardVelocity = switch (teamSide) {
-            case A -> PlayerBallContactResponseConfig.FORWARD_VELOCITY_METERS_PER_SECOND;
-            case B -> -PlayerBallContactResponseConfig.FORWARD_VELOCITY_METERS_PER_SECOND;
+            case A -> forwardMagnitude;
+            case B -> -forwardMagnitude;
         };
         return new BallVector3(
                 incomingVelocity.x(),
@@ -34,12 +49,25 @@ public final class PlayerBallContactResponseMath {
             VolleyballState state,
             PlayerBallContactEvent contact
     ) {
+        return applyPlayerContactResponse(
+                state,
+                contact,
+                PlayerHitTimingGrade.PERFECT
+        );
+    }
+
+    public static VolleyballState applyPlayerContactResponse(
+            VolleyballState state,
+            PlayerBallContactEvent contact,
+            PlayerHitTimingGrade timingGrade
+    ) {
         Objects.requireNonNull(state, "state must not be null");
         Objects.requireNonNull(contact, "contact must not be null");
 
-        BallVector3 outgoingVelocity = getDefaultPlayerContactResponseVelocity(
+        BallVector3 outgoingVelocity = getPlayerContactResponseVelocity(
                 contact.ballVelocity(),
-                contact.teamSide()
+                contact.teamSide(),
+                timingGrade
         );
         return new VolleyballState(state.position(), outgoingVelocity);
     }

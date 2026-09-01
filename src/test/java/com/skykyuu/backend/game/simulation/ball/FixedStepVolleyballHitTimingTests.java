@@ -146,7 +146,8 @@ class FixedStepVolleyballHitTimingTests {
         assertEquals(expectedSnapshot.velocity(), response.incomingVelocity());
         assertEquals(expectedSnapshot.velocity().x(), response.outgoingVelocity().x());
         assertEquals(6.3, response.outgoingVelocity().y());
-        assertEquals(5.0, response.outgoingVelocity().z());
+        assertEquals(0.90, response.hitTimingForwardMultiplier());
+        assertEquals(4.5, response.outgoingVelocity().z());
     }
 
     @Test
@@ -317,6 +318,7 @@ class FixedStepVolleyballHitTimingTests {
         PlayerBallContactResponseEvent response = responseEvent(lateHit);
         assertTiming(response, 1L);
         assertEquals(PlayerHitTimingGrade.LATE, response.hitTimingGrade());
+        assertEquals(0.90, response.hitTimingForwardMultiplier());
     }
 
     @Test
@@ -348,7 +350,8 @@ class FixedStepVolleyballHitTimingTests {
         assertEquals("player-b", response.playerId());
         assertTiming(response, -1L);
         assertEquals(PlayerHitTimingGrade.EARLY, response.hitTimingGrade());
-        assertEquals(-5.0, response.outgoingVelocity().z());
+        assertEquals(0.90, response.hitTimingForwardMultiplier());
+        assertEquals(-4.5, response.outgoingVelocity().z());
     }
 
     @Test
@@ -412,8 +415,9 @@ class FixedStepVolleyballHitTimingTests {
         );
         assertTiming(response, -3L);
         assertEquals(PlayerHitTimingGrade.EARLY, response.hitTimingGrade());
+        assertEquals(0.90, response.hitTimingForwardMultiplier());
         assertEquals(6.3, response.outgoingVelocity().y());
-        assertEquals(-5.0, response.outgoingVelocity().z());
+        assertEquals(-4.5, response.outgoingVelocity().z());
         assertEquals(CourtResult.IN, ground.courtResult());
         assertEquals(CourtSide.A, ground.courtSide());
     }
