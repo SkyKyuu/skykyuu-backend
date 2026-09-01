@@ -20,7 +20,12 @@ public final class PlayerHitIntentTracker {
 
         previousHitHeldByPlayer.put(input.playerId(), input.hitHeld());
 
-        return new PlayerHitIntent(input.playerId(), input.hitHeld(), hitPressed);
+        return new PlayerHitIntent(
+                input.playerId(),
+                input.hitHeld(),
+                hitPressed,
+                input.aimLateral()
+        );
     }
 
     public List<PlayerHitIntent> updateAll(List<PlayerHitInput> inputs) {

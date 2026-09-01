@@ -16,8 +16,17 @@ class PlayerHitInputTests {
 
         assertEquals("player-1", released.playerId());
         assertFalse(released.hitHeld());
+        assertEquals(0.0, released.aimLateral());
         assertEquals("player-2", held.playerId());
         assertTrue(held.hitHeld());
+        assertEquals(0.0, held.aimLateral());
+    }
+
+    @Test
+    void capturesPlayerLocalAnalogAimWithoutModification() {
+        PlayerHitInput input = new PlayerHitInput("player-1", true, 0.375);
+
+        assertEquals(0.375, input.aimLateral());
     }
 
     @Test
