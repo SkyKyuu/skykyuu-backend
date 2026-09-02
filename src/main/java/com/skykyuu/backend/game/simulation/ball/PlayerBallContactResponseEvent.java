@@ -15,6 +15,7 @@ public record PlayerBallContactResponseEvent(
         double hitTimingOffsetSeconds,
         PlayerHitTimingGrade hitTimingGrade,
         double hitTimingForwardMultiplier,
+        double hitTimingAccuracyMultiplier,
         double hitAimLateral,
         double hitAimWorldX,
         double hitAimVelocityX

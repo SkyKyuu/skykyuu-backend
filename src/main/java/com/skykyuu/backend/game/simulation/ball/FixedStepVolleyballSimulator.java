@@ -10,6 +10,7 @@ import com.skykyuu.backend.game.simulation.player.PlayerBallContactResponseMath;
 import com.skykyuu.backend.game.simulation.player.PlayerBallContactTarget;
 import com.skykyuu.backend.game.simulation.player.PlayerHitAim;
 import com.skykyuu.backend.game.simulation.player.PlayerHitAimMath;
+import com.skykyuu.backend.game.simulation.player.PlayerHitTimingAccuracy;
 import com.skykyuu.backend.game.simulation.player.PlayerHitTimingGrade;
 import com.skykyuu.backend.game.simulation.player.PlayerHitTimingGradeClassifier;
 import com.skykyuu.backend.game.simulation.player.PlayerHitTimingMath;
@@ -140,6 +141,8 @@ public final class FixedStepVolleyballSimulator {
                             PlayerHitTimingGradeClassifier.classify(timing.offsetSteps());
                     double forwardMultiplier =
                             PlayerHitTimingPower.getForwardMultiplier(timingGrade);
+                    double accuracyMultiplier =
+                            PlayerHitTimingAccuracy.getAccuracyMultiplier(timingGrade);
                     PlayerBallContactEvent responseContact = toPlayerContactSnapshot(
                             respondingTarget
                     );
@@ -155,6 +158,7 @@ public final class FixedStepVolleyballSimulator {
                             timing,
                             timingGrade,
                             forwardMultiplier,
+                            accuracyMultiplier,
                             hitAimLateral,
                             hitAimWorldX,
                             hitAimVelocityX
@@ -370,6 +374,7 @@ public final class FixedStepVolleyballSimulator {
             PlayerHitTimingSample timing,
             PlayerHitTimingGrade timingGrade,
             double forwardMultiplier,
+            double accuracyMultiplier,
             double hitAimLateral,
             double hitAimWorldX,
             double hitAimVelocityX
@@ -384,6 +389,7 @@ public final class FixedStepVolleyballSimulator {
                 timing.offsetSeconds(),
                 timingGrade,
                 forwardMultiplier,
+                accuracyMultiplier,
                 hitAimLateral,
                 hitAimWorldX,
                 hitAimVelocityX

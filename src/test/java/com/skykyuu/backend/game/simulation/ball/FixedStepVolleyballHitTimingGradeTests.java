@@ -20,12 +20,13 @@ class FixedStepVolleyballHitTimingGradeTests {
             VolleyballSimulationConfig.FIXED_STEP_SECONDS;
     private static final double TOLERANCE = 1.0e-12;
 
-    @ParameterizedTest(name = "{1} offset {0} applies multiplier {2} for Team {3}")
+    @ParameterizedTest(name = "{1} offset {0} uses power {2}, accuracy {3}, Team {4}")
     @MethodSource("gradePhysicsCases")
-    void everyGradeAppliesForwardPowerWithoutChangingLateralOrUpwardVelocity(
+    void everyGradeCarriesPowerAndAccuracyWithoutChangingBaselinePhysics(
             long offsetSteps,
             PlayerHitTimingGrade expectedGrade,
-            double expectedMultiplier,
+            double expectedForwardMultiplier,
+            double expectedAccuracyMultiplier,
             TeamSide teamSide
     ) {
         PlayerBallContactResponseEvent response = responseForOffset(offsetSteps, teamSide);
@@ -37,12 +38,19 @@ class FixedStepVolleyballHitTimingGradeTests {
                 TOLERANCE
         );
         assertEquals(expectedGrade, response.hitTimingGrade());
-        assertEquals(expectedMultiplier, response.hitTimingForwardMultiplier());
+        assertEquals(
+                expectedForwardMultiplier,
+                response.hitTimingForwardMultiplier()
+        );
+        assertEquals(
+                expectedAccuracyMultiplier,
+                response.hitTimingAccuracyMultiplier()
+        );
         assertEquals(response.incomingVelocity().x(), response.outgoingVelocity().x());
         assertEquals(6.3, response.outgoingVelocity().y());
         assertEquals(teamSide == TeamSide.A
-                        ? 5.0 * expectedMultiplier
-                        : -5.0 * expectedMultiplier,
+                        ? 5.0 * expectedForwardMultiplier
+                        : -5.0 * expectedForwardMultiplier,
                 response.outgoingVelocity().z());
     }
 
@@ -67,31 +75,59 @@ class FixedStepVolleyballHitTimingGradeTests {
         assertEquals(0L, response.hitTimingOffsetSteps());
         assertEquals(PlayerHitTimingGrade.PERFECT, response.hitTimingGrade());
         assertEquals(1.0, response.hitTimingForwardMultiplier());
+        assertEquals(1.0, response.hitTimingAccuracyMultiplier());
         assertEquals(5.0, response.outgoingVelocity().z());
     }
 
     private static Stream<Arguments> gradePhysicsCases() {
         return Stream.of(
-                gradePhysicsCase(-4L, PlayerHitTimingGrade.VERY_EARLY, 0.75, TeamSide.A),
-                gradePhysicsCase(-1L, PlayerHitTimingGrade.EARLY, 0.90, TeamSide.A),
-                gradePhysicsCase(0L, PlayerHitTimingGrade.PERFECT, 1.00, TeamSide.A),
-                gradePhysicsCase(1L, PlayerHitTimingGrade.LATE, 0.90, TeamSide.A),
-                gradePhysicsCase(4L, PlayerHitTimingGrade.VERY_LATE, 0.75, TeamSide.A),
-                gradePhysicsCase(-4L, PlayerHitTimingGrade.VERY_EARLY, 0.75, TeamSide.B),
-                gradePhysicsCase(-1L, PlayerHitTimingGrade.EARLY, 0.90, TeamSide.B),
-                gradePhysicsCase(0L, PlayerHitTimingGrade.PERFECT, 1.00, TeamSide.B),
-                gradePhysicsCase(1L, PlayerHitTimingGrade.LATE, 0.90, TeamSide.B),
-                gradePhysicsCase(4L, PlayerHitTimingGrade.VERY_LATE, 0.75, TeamSide.B)
+                gradePhysicsCase(
+                        -4L, PlayerHitTimingGrade.VERY_EARLY, 0.75, 0.60, TeamSide.A
+                ),
+                gradePhysicsCase(
+                        -1L, PlayerHitTimingGrade.EARLY, 0.90, 0.85, TeamSide.A
+                ),
+                gradePhysicsCase(
+                        0L, PlayerHitTimingGrade.PERFECT, 1.00, 1.00, TeamSide.A
+                ),
+                gradePhysicsCase(
+                        1L, PlayerHitTimingGrade.LATE, 0.90, 0.85, TeamSide.A
+                ),
+                gradePhysicsCase(
+                        4L, PlayerHitTimingGrade.VERY_LATE, 0.75, 0.60, TeamSide.A
+                ),
+                gradePhysicsCase(
+                        -4L, PlayerHitTimingGrade.VERY_EARLY, 0.75, 0.60, TeamSide.B
+                ),
+                gradePhysicsCase(
+                        -1L, PlayerHitTimingGrade.EARLY, 0.90, 0.85, TeamSide.B
+                ),
+                gradePhysicsCase(
+                        0L, PlayerHitTimingGrade.PERFECT, 1.00, 1.00, TeamSide.B
+                ),
+                gradePhysicsCase(
+                        1L, PlayerHitTimingGrade.LATE, 0.90, 0.85, TeamSide.B
+                ),
+                gradePhysicsCase(
+                        4L, PlayerHitTimingGrade.VERY_LATE, 0.75, 0.60, TeamSide.B
+                )
         );
     }
 
     private static Arguments gradePhysicsCase(
             long offsetSteps,
             PlayerHitTimingGrade grade,
-            double multiplier,
+            double forwardMultiplier,
+            double accuracyMultiplier,
             TeamSide teamSide
     ) {
-        return Arguments.of(offsetSteps, grade, multiplier, teamSide);
+        return Arguments.of(
+                offsetSteps,
+                grade,
+                forwardMultiplier,
+                accuracyMultiplier,
+                teamSide
+        );
     }
 
     private static PlayerBallContactResponseEvent responseForOffset(
