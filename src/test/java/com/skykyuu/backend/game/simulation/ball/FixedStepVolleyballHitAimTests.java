@@ -21,6 +21,7 @@ class FixedStepVolleyballHitAimTests {
 
     private static final double FIXED_STEP_SECONDS =
             VolleyballSimulationConfig.FIXED_STEP_SECONDS;
+    private static final double DOUBLE_TOLERANCE = 1.0e-12;
 
     @ParameterizedTest
     @ValueSource(doubles = {-1.0, 0.0, 0.375, 1.0})
@@ -66,7 +67,7 @@ class FixedStepVolleyballHitAimTests {
         ));
 
         double expectedWorldX = aimLateral == 0.0 ? 0.0 : -aimLateral;
-        double expectedAimVelocityX = expectedWorldX * 3.0;
+        double expectedAimVelocityX = expectedWorldX * 3.0 * 0.85;
 
         assertAimPhysics(
                 response,
@@ -102,7 +103,7 @@ class FixedStepVolleyballHitAimTests {
                 List.of(heldIntent("player-a", 1.0))
         ));
 
-        assertAimPhysics(response, -1.0, -1.0, -3.0, -2.75);
+        assertAimPhysics(response, -1.0, -1.0, -2.55, -2.30);
     }
 
     @Test
@@ -151,7 +152,7 @@ class FixedStepVolleyballHitAimTests {
                 List.of()
         ));
 
-        assertAimPhysics(response, 1.0, 1.0, 3.0, 3.25);
+        assertAimPhysics(response, 1.0, 1.0, 2.55, 2.80);
         assertEquals(-1L, response.hitTimingOffsetSteps());
     }
 
@@ -297,7 +298,7 @@ class FixedStepVolleyballHitAimTests {
         ));
 
         assertEquals("player-b", response.playerId());
-        assertAimPhysics(response, 0.25, -0.25, -0.75, -0.5);
+        assertAimPhysics(response, 0.25, -0.25, -0.6375, -0.3875);
     }
 
     @Test
@@ -406,14 +407,41 @@ class FixedStepVolleyballHitAimTests {
             double expectedAimVelocityX,
             double expectedOutgoingVelocityX
     ) {
-        assertEquals(expectedAimLateral, response.hitAimLateral());
-        assertEquals(expectedAimWorldX, response.hitAimWorldX());
-        assertEquals(expectedAimVelocityX, response.hitAimVelocityX());
+        assertEquals(expectedAimLateral, response.hitAimLateral(), DOUBLE_TOLERANCE);
+        assertEquals(expectedAimWorldX, response.hitAimWorldX(), DOUBLE_TOLERANCE);
+        double expectedEffectiveAimLateral =
+                expectedAimLateral * response.hitTimingAccuracyMultiplier();
+        double expectedEffectiveAimWorldX = switch (response.teamSide()) {
+            case A -> expectedEffectiveAimLateral;
+            case B -> expectedEffectiveAimLateral == 0.0
+                    ? 0.0
+                    : -expectedEffectiveAimLateral;
+        };
+        assertEquals(
+                expectedEffectiveAimLateral,
+                response.hitEffectiveAimLateral(),
+                DOUBLE_TOLERANCE
+        );
+        assertEquals(
+                expectedEffectiveAimWorldX,
+                response.hitEffectiveAimWorldX(),
+                DOUBLE_TOLERANCE
+        );
+        assertEquals(
+                expectedAimVelocityX,
+                response.hitAimVelocityX(),
+                DOUBLE_TOLERANCE
+        );
         assertEquals(
                 response.incomingVelocity().x() + response.hitAimVelocityX(),
-                response.outgoingVelocity().x()
+                response.outgoingVelocity().x(),
+                DOUBLE_TOLERANCE
         );
-        assertEquals(expectedOutgoingVelocityX, response.outgoingVelocity().x());
+        assertEquals(
+                expectedOutgoingVelocityX,
+                response.outgoingVelocity().x(),
+                DOUBLE_TOLERANCE
+        );
     }
 
     private static void advanceWithoutHit(
