@@ -18,9 +18,9 @@ class FixedStepVolleyballHitTimingAccuracyTests {
     private static final double FIXED_STEP_SECONDS =
             VolleyballSimulationConfig.FIXED_STEP_SECONDS;
 
-    @ParameterizedTest(name = "{1} {2} carries accuracy {4} without changing aim")
+    @ParameterizedTest(name = "{1} {2} applies aim accuracy {4}")
     @MethodSource("aimPhysicsInvariantCases")
-    void accuracyTelemetryDoesNotModifyB12AimPhysics(
+    void accuracyScalesLatchedAimAndTelemetryWithoutScalingIncomingX(
             long offsetSteps,
             PlayerHitTimingGrade expectedGrade,
             TeamSide teamSide,
@@ -48,23 +48,26 @@ class FixedStepVolleyballHitTimingAccuracyTests {
         );
         assertEquals(1.0, response.hitAimLateral());
         assertEquals(expectedAimWorldX, response.hitAimWorldX());
-        assertEquals(expectedAimVelocityX, response.hitAimVelocityX());
+        assertEquals(expectedAccuracyMultiplier, response.hitEffectiveAimLateral());
+        assertEquals(expectedAimWorldX * expectedAccuracyMultiplier,
+                response.hitEffectiveAimWorldX());
+        assertEquals(expectedAimVelocityX, response.hitAimVelocityX(), 1.0e-12);
         assertEquals(0.25, response.incomingVelocity().x());
-        assertEquals(
-                new BallVector3(expectedVelocityX, 6.3, expectedVelocityZ),
-                response.outgoingVelocity()
-        );
+        assertEquals(expectedVelocityX, response.outgoingVelocity().x(), 1.0e-12);
+        assertEquals(6.3, response.outgoingVelocity().y());
+        assertEquals(expectedVelocityZ, response.outgoingVelocity().z());
+        assertEquals(response, responseForOffset(offsetSteps, teamSide, 1.0));
     }
 
     private static Stream<Arguments> aimPhysicsInvariantCases() {
         return Stream.of(
                 Arguments.of(
                         -4L, PlayerHitTimingGrade.VERY_EARLY, TeamSide.B,
-                        0.75, 0.60, -1.0, -3.0, -2.75, -3.75
+                        0.75, 0.60, -1.0, -1.80, -1.55, -3.75
                 ),
                 Arguments.of(
                         -1L, PlayerHitTimingGrade.EARLY, TeamSide.B,
-                        0.90, 0.85, -1.0, -3.0, -2.75, -4.5
+                        0.90, 0.85, -1.0, -2.55, -2.30, -4.5
                 ),
                 Arguments.of(
                         0L, PlayerHitTimingGrade.PERFECT, TeamSide.B,
@@ -72,15 +75,31 @@ class FixedStepVolleyballHitTimingAccuracyTests {
                 ),
                 Arguments.of(
                         -4L, PlayerHitTimingGrade.VERY_EARLY, TeamSide.A,
-                        0.75, 0.60, 1.0, 3.0, 3.25, 3.75
+                        0.75, 0.60, 1.0, 1.80, 2.05, 3.75
                 ),
                 Arguments.of(
                         -1L, PlayerHitTimingGrade.EARLY, TeamSide.A,
-                        0.90, 0.85, 1.0, 3.0, 3.25, 4.5
+                        0.90, 0.85, 1.0, 2.55, 2.80, 4.5
                 ),
                 Arguments.of(
                         0L, PlayerHitTimingGrade.PERFECT, TeamSide.A,
                         1.00, 1.00, 1.0, 3.0, 3.25, 5.0
+                ),
+                Arguments.of(
+                        1L, PlayerHitTimingGrade.LATE, TeamSide.A,
+                        0.90, 0.85, 1.0, 2.55, 2.80, 4.5
+                ),
+                Arguments.of(
+                        1L, PlayerHitTimingGrade.LATE, TeamSide.B,
+                        0.90, 0.85, -1.0, -2.55, -2.30, -4.5
+                ),
+                Arguments.of(
+                        4L, PlayerHitTimingGrade.VERY_LATE, TeamSide.A,
+                        0.75, 0.60, 1.0, 1.80, 2.05, 3.75
+                ),
+                Arguments.of(
+                        4L, PlayerHitTimingGrade.VERY_LATE, TeamSide.B,
+                        0.75, 0.60, -1.0, -1.80, -1.55, -3.75
                 )
         );
     }
@@ -110,6 +129,9 @@ class FixedStepVolleyballHitTimingAccuracyTests {
             ));
         }
 
+        for (long step = 0L; step < offsetSteps; step++) {
+            simulator.advance(FIXED_STEP_SECONDS, List.of(overlappingPlayer), List.of());
+        }
         return responseEvent(simulator.advance(
                 FIXED_STEP_SECONDS,
                 List.of(overlappingPlayer),

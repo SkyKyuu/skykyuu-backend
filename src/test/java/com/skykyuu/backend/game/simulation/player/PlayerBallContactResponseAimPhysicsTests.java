@@ -40,7 +40,7 @@ class PlayerBallContactResponseAimPhysicsTests {
 
     @ParameterizedTest(name = "Team B +1 aim with {0}")
     @MethodSource("teamBTimingCases")
-    void timingGradeChangesForwardVelocityWithoutChangingLateralAim(
+    void timingGradeScalesAimContributionAndForwardVelocity(
             PlayerHitTimingGrade grade,
             double expectedForwardVelocity
     ) {
@@ -52,7 +52,10 @@ class PlayerBallContactResponseAimPhysicsTests {
                         1.0
                 );
 
-        assertEquals(-2.75, outgoing.x());
+        assertEquals(
+                0.25 - PlayerHitTimingAccuracy.getAccuracyMultiplier(grade) * 3.0,
+                outgoing.x()
+        );
         assertEquals(6.3, outgoing.y());
         assertEquals(expectedForwardVelocity, outgoing.z());
     }

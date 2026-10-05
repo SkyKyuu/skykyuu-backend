@@ -43,12 +43,27 @@ public final class PlayerBallContactResponseMath {
             PlayerHitTimingGrade timingGrade,
             double hitAimLateral
     ) {
+        return getPlayerContactResponseVelocity(
+                incomingVelocity, teamSide, timingGrade, hitAimLateral,
+                PlayerHitTimingAccuracy.getAccuracyMultiplier(timingGrade)
+        );
+    }
+
+    public static BallVector3 getPlayerContactResponseVelocity(
+            BallVector3 incomingVelocity,
+            TeamSide teamSide,
+            PlayerHitTimingGrade timingGrade,
+            double hitAimLateral,
+            double accuracyMultiplier
+    ) {
         Objects.requireNonNull(incomingVelocity, "incomingVelocity must not be null");
         Objects.requireNonNull(teamSide, "teamSide must not be null");
 
         double aimVelocityX = PlayerHitAimMath.getVelocityXContribution(
                 teamSide,
-                hitAimLateral
+                PlayerHitTimingAccuracyAim.getEffectiveAimLateral(
+                        hitAimLateral, accuracyMultiplier
+                )
         );
         double forwardMagnitude =
                 PlayerBallContactResponseConfig.FORWARD_VELOCITY_METERS_PER_SECOND
@@ -90,6 +105,19 @@ public final class PlayerBallContactResponseMath {
             PlayerHitTimingGrade timingGrade,
             double hitAimLateral
     ) {
+        return applyPlayerContactResponse(
+                state, contact, timingGrade, hitAimLateral,
+                PlayerHitTimingAccuracy.getAccuracyMultiplier(timingGrade)
+        );
+    }
+
+    public static VolleyballState applyPlayerContactResponse(
+            VolleyballState state,
+            PlayerBallContactEvent contact,
+            PlayerHitTimingGrade timingGrade,
+            double hitAimLateral,
+            double accuracyMultiplier
+    ) {
         Objects.requireNonNull(state, "state must not be null");
         Objects.requireNonNull(contact, "contact must not be null");
 
@@ -97,7 +125,8 @@ public final class PlayerBallContactResponseMath {
                 contact.ballVelocity(),
                 contact.teamSide(),
                 timingGrade,
-                hitAimLateral
+                hitAimLateral,
+                accuracyMultiplier
         );
         return new VolleyballState(state.position(), outgoingVelocity);
     }

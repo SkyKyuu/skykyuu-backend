@@ -66,7 +66,7 @@ class FixedStepVolleyballHitAimTests {
         ));
 
         double expectedWorldX = aimLateral == 0.0 ? 0.0 : -aimLateral;
-        double expectedAimVelocityX = expectedWorldX * 3.0;
+        double expectedAimVelocityX = (expectedWorldX * 0.85) * 3.0;
 
         assertAimPhysics(
                 response,
@@ -102,7 +102,8 @@ class FixedStepVolleyballHitAimTests {
                 List.of(heldIntent("player-a", 1.0))
         ));
 
-        assertAimPhysics(response, -1.0, -1.0, -3.0, -2.75);
+        assertAimPhysics(response, -1.0, -1.0, -2.55, -2.30);
+        assertEquals(-0.85, response.hitEffectiveAimLateral());
     }
 
     @Test
@@ -151,7 +152,7 @@ class FixedStepVolleyballHitAimTests {
                 List.of()
         ));
 
-        assertAimPhysics(response, 1.0, 1.0, 3.0, 3.25);
+        assertAimPhysics(response, 1.0, 1.0, 2.55, 2.80);
         assertEquals(-1L, response.hitTimingOffsetSteps());
     }
 
@@ -297,7 +298,7 @@ class FixedStepVolleyballHitAimTests {
         ));
 
         assertEquals("player-b", response.playerId());
-        assertAimPhysics(response, 0.25, -0.25, -0.75, -0.5);
+        assertAimPhysics(response, 0.25, -0.25, -0.6375, -0.3875);
     }
 
     @Test
@@ -408,12 +409,12 @@ class FixedStepVolleyballHitAimTests {
     ) {
         assertEquals(expectedAimLateral, response.hitAimLateral());
         assertEquals(expectedAimWorldX, response.hitAimWorldX());
-        assertEquals(expectedAimVelocityX, response.hitAimVelocityX());
+        assertEquals(expectedAimVelocityX, response.hitAimVelocityX(), 1.0e-12);
         assertEquals(
                 response.incomingVelocity().x() + response.hitAimVelocityX(),
                 response.outgoingVelocity().x()
         );
-        assertEquals(expectedOutgoingVelocityX, response.outgoingVelocity().x());
+        assertEquals(expectedOutgoingVelocityX, response.outgoingVelocity().x(), 1.0e-12);
     }
 
     private static void advanceWithoutHit(
