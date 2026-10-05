@@ -18,6 +18,8 @@ public record PlayerBallContactResponseEvent(
         double hitTimingAccuracyMultiplier,
         double hitAimLateral,
         double hitAimWorldX,
+        double hitEffectiveAimLateral,
+        double hitEffectiveAimWorldX,
         double hitAimVelocityX
 ) implements BallSimulationEvent {
 
