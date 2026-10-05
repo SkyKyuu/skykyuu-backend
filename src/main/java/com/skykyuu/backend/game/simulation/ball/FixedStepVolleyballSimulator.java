@@ -41,6 +41,7 @@ public final class FixedStepVolleyballSimulator {
     private final Map<String, Double> hitBufferRemainingSecondsByPlayer = new HashMap<>();
     private final Map<String, Long> hitPressStepByPlayer = new HashMap<>();
     private final Map<String, Double> hitAimLateralByPlayer = new HashMap<>();
+    private final Map<String, Double> hitAimForwardByPlayer = new HashMap<>();
     private final Map<String, Long> contactEntryStepByPlayer = new HashMap<>();
 
     public FixedStepVolleyballSimulator(VolleyballState initialState) {
@@ -111,6 +112,7 @@ public final class FixedStepVolleyballSimulator {
                 hitBufferRemainingSecondsByPlayer.clear();
                 hitPressStepByPlayer.clear();
                 hitAimLateralByPlayer.clear();
+                hitAimForwardByPlayer.clear();
                 contactEntryStepByPlayer.clear();
             } else {
                 state = VolleyballSimulationMath.stepFreeFlight(
@@ -125,6 +127,9 @@ public final class FixedStepVolleyballSimulator {
                 );
                 if (respondingTarget != null) {
                     double hitAimLateral = getResponseHitAimLateral(
+                            respondingTarget.playerId()
+                    );
+                    double hitAimForward = getResponseHitAimForward(
                             respondingTarget.playerId()
                     );
                     double hitAimWorldX = PlayerHitAimMath.lateralToWorldX(
@@ -171,12 +176,14 @@ public final class FixedStepVolleyballSimulator {
                             hitAimWorldX,
                             hitEffectiveAimLateral,
                             hitEffectiveAimWorldX,
-                            hitAimVelocityX
+                            hitAimVelocityX,
+                            hitAimForward
                     ));
                     respondedPlayerContactIds.add(respondingTarget.playerId());
                     hitBufferRemainingSecondsByPlayer.remove(respondingTarget.playerId());
                     hitPressStepByPlayer.remove(respondingTarget.playerId());
                     hitAimLateralByPlayer.remove(respondingTarget.playerId());
+                    hitAimForwardByPlayer.remove(respondingTarget.playerId());
                 }
 
                 decayHitBuffers();
@@ -224,6 +231,7 @@ public final class FixedStepVolleyballSimulator {
         hitBufferRemainingSecondsByPlayer.clear();
         hitPressStepByPlayer.clear();
         hitAimLateralByPlayer.clear();
+        hitAimForwardByPlayer.clear();
         contactEntryStepByPlayer.clear();
     }
 
@@ -307,11 +315,13 @@ public final class FixedStepVolleyballSimulator {
             }
 
             String playerId = intent.playerId();
+            double aimForward = PlayerHitAim.validateForward(intent.aimForward());
             if (respondedPlayerContactIds.contains(playerId)
                     && activePlayerContactIds.contains(playerId)) {
                 hitBufferRemainingSecondsByPlayer.remove(playerId);
                 hitPressStepByPlayer.remove(playerId);
                 hitAimLateralByPlayer.remove(playerId);
+                hitAimForwardByPlayer.remove(playerId);
                 continue;
             }
 
@@ -322,6 +332,7 @@ public final class FixedStepVolleyballSimulator {
             );
             hitPressStepByPlayer.put(playerId, totalSimulationSteps);
             hitAimLateralByPlayer.put(playerId, aimLateral);
+            hitAimForwardByPlayer.put(playerId, aimForward);
         }
     }
 
@@ -337,6 +348,7 @@ public final class FixedStepVolleyballSimulator {
                 iterator.remove();
                 hitPressStepByPlayer.remove(playerId);
                 hitAimLateralByPlayer.remove(playerId);
+                hitAimForwardByPlayer.remove(playerId);
             } else {
                 entry.setValue(remainingSeconds);
             }
@@ -368,6 +380,16 @@ public final class FixedStepVolleyballSimulator {
         return aimLateral;
     }
 
+    private double getResponseHitAimForward(String playerId) {
+        Double aimForward = hitAimForwardByPlayer.get(playerId);
+        if (aimForward == null) {
+            throw new IllegalStateException(
+                    "Missing hit aim forward state for responding playerId: " + playerId
+            );
+        }
+        return aimForward;
+    }
+
     private PlayerBallContactEvent toPlayerContactSnapshot(PlayerBallContactTarget target) {
         return new PlayerBallContactEvent(
                 target.playerId(),
@@ -389,7 +411,8 @@ public final class FixedStepVolleyballSimulator {
             double hitAimWorldX,
             double hitEffectiveAimLateral,
             double hitEffectiveAimWorldX,
-            double hitAimVelocityX
+            double hitAimVelocityX,
+            double hitAimForward
     ) {
         return new PlayerBallContactResponseEvent(
                 contact.playerId(),
@@ -406,7 +429,8 @@ public final class FixedStepVolleyballSimulator {
                 hitAimWorldX,
                 hitEffectiveAimLateral,
                 hitEffectiveAimWorldX,
-                hitAimVelocityX
+                hitAimVelocityX,
+                hitAimForward
         );
     }
 
