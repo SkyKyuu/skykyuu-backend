@@ -15,6 +15,40 @@ import static org.junit.jupiter.api.Assertions.assertThrows;
 
 class PlayerHitTimingAccuracyAimTests {
 
+    @ParameterizedTest(name = "{0}, forward {2} uses accuracy {1}")
+    @MethodSource("forwardCases")
+    void scalesForwardExactlyLikeF217(PlayerHitTimingGrade grade, double accuracy, double raw) {
+        assertEquals(accuracy, PlayerHitTimingAccuracy.getAccuracyMultiplier(grade));
+        assertEquals(raw * accuracy, PlayerHitTimingAccuracyAim.getEffectiveAimForward(raw, accuracy));
+    }
+
+    @ParameterizedTest
+    @ValueSource(doubles = {0.0, -0.1, 1.01, Double.NaN, Double.POSITIVE_INFINITY, Double.NEGATIVE_INFINITY})
+    void rejectsInvalidForwardAccuracy(double accuracy) {
+        assertThrows(IllegalArgumentException.class,
+                () -> PlayerHitTimingAccuracyAim.getEffectiveAimForward(0.0, accuracy));
+    }
+
+    @ParameterizedTest
+    @ValueSource(doubles = {-1.01, 1.01, Double.NaN, Double.POSITIVE_INFINITY, Double.NEGATIVE_INFINITY})
+    void validatesForwardBeforeApplyingAccuracy(double raw) {
+        IllegalArgumentException error = assertThrows(IllegalArgumentException.class,
+                () -> PlayerHitTimingAccuracyAim.getEffectiveAimForward(raw, 0.60));
+        assertEquals("aimForward must be finite and between -1.0 and 1.0: " + raw, error.getMessage());
+    }
+
+    private static Stream<Arguments> forwardCases() {
+        return Stream.of(
+                Arguments.of(PlayerHitTimingGrade.VERY_EARLY, 0.60),
+                Arguments.of(PlayerHitTimingGrade.EARLY, 0.85),
+                Arguments.of(PlayerHitTimingGrade.PERFECT, 1.00),
+                Arguments.of(PlayerHitTimingGrade.LATE, 0.85),
+                Arguments.of(PlayerHitTimingGrade.VERY_LATE, 0.60)
+        ).flatMap(timing -> Stream.of(-1.0, 0.0, 1.0, 0.5,
+                -0.7071067811865476, 0.7071067811865476).map(raw ->
+                Arguments.of(timing.get()[0], timing.get()[1], raw)));
+    }
+
     @ParameterizedTest(name = "{0}, team {2}, aim {3}, incoming X {4}")
     @MethodSource("responseCases")
     void matchesFrontendMathForEveryGradeTeamAimAndIncomingSign(

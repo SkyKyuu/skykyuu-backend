@@ -12,6 +12,15 @@ public final class PlayerHitAimMath {
     public static double lateralToWorldX(TeamSide teamSide, double aimLateral) {
         Objects.requireNonNull(teamSide, "teamSide must not be null");
         double validatedAim = PlayerHitAim.validateLateral(aimLateral);
+        return playerLocalAimToWorldAxis(teamSide, validatedAim);
+    }
+
+    public static double forwardToWorldZ(TeamSide teamSide, double aimForward) {
+        Objects.requireNonNull(teamSide, "teamSide must not be null");
+        return playerLocalAimToWorldAxis(teamSide, PlayerHitAim.validateForward(aimForward));
+    }
+
+    private static double playerLocalAimToWorldAxis(TeamSide teamSide, double validatedAim) {
         double canonicalAim = validatedAim == 0.0 ? 0.0 : validatedAim;
         return switch (teamSide) {
             case A -> canonicalAim;

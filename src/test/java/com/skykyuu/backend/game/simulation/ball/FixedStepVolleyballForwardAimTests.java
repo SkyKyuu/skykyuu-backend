@@ -68,6 +68,8 @@ class FixedStepVolleyballForwardAimTests {
         assertEquals(1.0, event.hitAimForward());
         assertEquals(PlayerHitTimingGrade.EARLY, event.hitTimingGrade());
         assertEquals(0.85, event.hitTimingAccuracyMultiplier());
+        assertEquals(0.85, event.hitEffectiveAimForward());
+        assertEquals(-0.85, event.hitEffectiveAimWorldZ());
         assertEquals(-4.5, event.outgoingVelocity().z());
     }
 
@@ -75,9 +77,12 @@ class FixedStepVolleyballForwardAimTests {
     void zeroStepBuffersForwardUntilResponse() {
         FixedStepVolleyballSimulator simulator = new FixedStepVolleyballSimulator(INITIAL);
         assertEquals(0, simulator.advance(0.0, List.of(), List.of(intent(0.7071067811865476))).executedSteps());
-        assertEquals(0.7071067811865476, response(simulator.advance(
+        PlayerBallContactResponseEvent event = response(simulator.advance(
                 STEP, List.of(target()), List.of(new PlayerHitIntent("player", true, false, 0.375, -1.0))
-        )).hitAimForward());
+        ));
+        assertEquals(0.7071067811865476, event.hitAimForward());
+        assertEquals(0.7071067811865476, event.hitEffectiveAimForward());
+        assertEquals(0.7071067811865476, event.hitEffectiveAimWorldZ());
     }
 
     @Test

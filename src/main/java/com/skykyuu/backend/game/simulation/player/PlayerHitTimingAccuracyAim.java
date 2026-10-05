@@ -6,7 +6,14 @@ public final class PlayerHitTimingAccuracyAim {
     }
 
     public static double getEffectiveAimLateral(double aimLateral, double accuracyMultiplier) {
-        double validatedAim = PlayerHitAim.validateLateral(aimLateral);
+        return applyTimingAccuracy(PlayerHitAim.validateLateral(aimLateral), accuracyMultiplier);
+    }
+
+    public static double getEffectiveAimForward(double aimForward, double accuracyMultiplier) {
+        return applyTimingAccuracy(PlayerHitAim.validateForward(aimForward), accuracyMultiplier);
+    }
+
+    private static double applyTimingAccuracy(double validatedAim, double accuracyMultiplier) {
         if (!Double.isFinite(accuracyMultiplier)
                 || accuracyMultiplier <= 0.0 || accuracyMultiplier > 1.0) {
             throw new IllegalArgumentException(
