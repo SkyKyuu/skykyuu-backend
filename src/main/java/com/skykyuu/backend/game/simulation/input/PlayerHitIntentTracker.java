@@ -24,7 +24,8 @@ public final class PlayerHitIntentTracker {
                 input.playerId(),
                 input.hitHeld(),
                 hitPressed,
-                input.aimLateral()
+                input.aimLateral(),
+                input.aimForward()
         );
     }
 
