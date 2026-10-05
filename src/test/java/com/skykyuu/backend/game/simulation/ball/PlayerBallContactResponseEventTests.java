@@ -48,10 +48,25 @@ class PlayerBallContactResponseEventTests {
         assertEquals(-0.31875, event.hitEffectiveAimLateral());
         assertEquals(0.31875, event.hitEffectiveAimWorldX());
         assertEquals(0.95625, event.hitAimVelocityX());
+        assertEquals(0.0, event.hitAimForward());
+        assertEquals(0.0, event.hitEffectiveAimForward());
+        assertEquals(0.0, event.hitEffectiveAimWorldZ());
         assertEquals(
                 event.incomingVelocity().x() + event.hitAimVelocityX(),
                 event.outgoingVelocity().x()
         );
+    }
+
+    @Test
+    void preservesB15ConstructorUsingSuppliedAccuracyAndRawForward() {
+        BallVector3 vector = new BallVector3(0.0, 0.0, 0.0);
+        PlayerBallContactResponseEvent event = new PlayerBallContactResponseEvent(
+                "player", TeamSide.B, vector, vector, vector, 0L, 0.0,
+                PlayerHitTimingGrade.PERFECT, 1.0, 0.85,
+                0.0, 0.0, 0.0, 0.0, 0.0, -1.0);
+        assertEquals(-1.0, event.hitAimForward());
+        assertEquals(-0.85, event.hitEffectiveAimForward());
+        assertEquals(0.85, event.hitEffectiveAimWorldZ());
     }
 
     @Test

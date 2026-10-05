@@ -145,6 +145,13 @@ public final class FixedStepVolleyballSimulator {
                             PlayerHitTimingPower.getForwardMultiplier(timingGrade);
                     double accuracyMultiplier =
                             PlayerHitTimingAccuracy.getAccuracyMultiplier(timingGrade);
+                    double hitEffectiveAimForward =
+                            PlayerHitTimingAccuracyAim.getEffectiveAimForward(
+                                    hitAimForward, accuracyMultiplier
+                            );
+                    double hitEffectiveAimWorldZ = PlayerHitAimMath.forwardToWorldZ(
+                            respondingTarget.teamSide(), hitEffectiveAimForward
+                    );
                     double hitEffectiveAimLateral =
                             PlayerHitTimingAccuracyAim.getEffectiveAimLateral(
                                     hitAimLateral, accuracyMultiplier
@@ -177,7 +184,9 @@ public final class FixedStepVolleyballSimulator {
                             hitEffectiveAimLateral,
                             hitEffectiveAimWorldX,
                             hitAimVelocityX,
-                            hitAimForward
+                            hitAimForward,
+                            hitEffectiveAimForward,
+                            hitEffectiveAimWorldZ
                     ));
                     respondedPlayerContactIds.add(respondingTarget.playerId());
                     hitBufferRemainingSecondsByPlayer.remove(respondingTarget.playerId());
@@ -412,7 +421,9 @@ public final class FixedStepVolleyballSimulator {
             double hitEffectiveAimLateral,
             double hitEffectiveAimWorldX,
             double hitAimVelocityX,
-            double hitAimForward
+            double hitAimForward,
+            double hitEffectiveAimForward,
+            double hitEffectiveAimWorldZ
     ) {
         return new PlayerBallContactResponseEvent(
                 contact.playerId(),
@@ -430,7 +441,9 @@ public final class FixedStepVolleyballSimulator {
                 hitEffectiveAimLateral,
                 hitEffectiveAimWorldX,
                 hitAimVelocityX,
-                hitAimForward
+                hitAimForward,
+                hitEffectiveAimForward,
+                hitEffectiveAimWorldZ
         );
     }
 
