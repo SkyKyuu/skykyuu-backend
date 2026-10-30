@@ -152,6 +152,9 @@ public final class FixedStepVolleyballSimulator {
                     double hitEffectiveAimWorldZ = PlayerHitAimMath.forwardToWorldZ(
                             respondingTarget.teamSide(), hitEffectiveAimForward
                     );
+                    double hitAimVelocityZ = PlayerHitAimMath.getVelocityZContribution(
+                            respondingTarget.teamSide(), hitEffectiveAimForward
+                    );
                     double hitEffectiveAimLateral =
                             PlayerHitTimingAccuracyAim.getEffectiveAimLateral(
                                     hitAimLateral, accuracyMultiplier
@@ -170,7 +173,8 @@ public final class FixedStepVolleyballSimulator {
                             responseContact,
                             timingGrade,
                             hitAimLateral,
-                            accuracyMultiplier
+                            accuracyMultiplier,
+                            hitAimForward
                     );
                     events.add(toPlayerContactResponseEvent(
                             responseContact,
@@ -186,7 +190,8 @@ public final class FixedStepVolleyballSimulator {
                             hitAimVelocityX,
                             hitAimForward,
                             hitEffectiveAimForward,
-                            hitEffectiveAimWorldZ
+                            hitEffectiveAimWorldZ,
+                            hitAimVelocityZ
                     ));
                     respondedPlayerContactIds.add(respondingTarget.playerId());
                     hitBufferRemainingSecondsByPlayer.remove(respondingTarget.playerId());
@@ -423,7 +428,8 @@ public final class FixedStepVolleyballSimulator {
             double hitAimVelocityX,
             double hitAimForward,
             double hitEffectiveAimForward,
-            double hitEffectiveAimWorldZ
+            double hitEffectiveAimWorldZ,
+            double hitAimVelocityZ
     ) {
         return new PlayerBallContactResponseEvent(
                 contact.playerId(),
@@ -443,7 +449,8 @@ public final class FixedStepVolleyballSimulator {
                 hitAimVelocityX,
                 hitAimForward,
                 hitEffectiveAimForward,
-                hitEffectiveAimWorldZ
+                hitEffectiveAimWorldZ,
+                hitAimVelocityZ
         );
     }
 

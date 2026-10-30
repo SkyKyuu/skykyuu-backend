@@ -14,6 +14,33 @@ import static org.junit.jupiter.api.Assertions.assertThrows;
 
 class PlayerHitAimMathTests {
 
+    @ParameterizedTest
+    @ValueSource(doubles = {-1.0, 0.0, -0.0, 1.0, 0.5, 0.85, -0.7071067811865476, 0.7071067811865476})
+    void contributesForwardVelocityFromEffectiveAimOnly(double effective) {
+        for (TeamSide team : TeamSide.values()) {
+            double expected = effective == 0.0 ? 0.0 : (team == TeamSide.A ? effective : -effective) * 2.0;
+            assertEquals(expected, PlayerHitAimMath.getVelocityZContribution(team, effective));
+            if (effective == 0.0) {
+                assertEquals(Double.doubleToRawLongBits(0.0),
+                        Double.doubleToRawLongBits(PlayerHitAimMath.getVelocityZContribution(team, effective)));
+            }
+        }
+    }
+
+    @ParameterizedTest
+    @ValueSource(doubles = {-1.01, 1.01, Double.NaN, Double.POSITIVE_INFINITY, Double.NEGATIVE_INFINITY})
+    void rejectsInvalidEffectiveForwardContribution(double effective) {
+        for (TeamSide team : TeamSide.values()) {
+            assertThrows(IllegalArgumentException.class,
+                    () -> PlayerHitAimMath.getVelocityZContribution(team, effective));
+        }
+    }
+
+    @Test
+    void rejectsMissingTeamForForwardContribution() {
+        assertThrows(NullPointerException.class, () -> PlayerHitAimMath.getVelocityZContribution(null, 1.0));
+    }
+
     @ParameterizedTest(name = "Team {0}, local {1} maps to world Z {2}")
     @MethodSource("worldZCases")
     void mapsForwardToWorldZWithoutQuantization(TeamSide team, double raw, double worldZ) {

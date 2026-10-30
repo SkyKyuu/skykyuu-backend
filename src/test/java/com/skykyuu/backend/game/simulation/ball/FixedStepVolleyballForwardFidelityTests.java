@@ -15,6 +15,7 @@ import java.util.List;
 import java.util.stream.Stream;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
 class FixedStepVolleyballForwardFidelityTests {
 
@@ -24,7 +25,7 @@ class FixedStepVolleyballForwardFidelityTests {
 
     @ParameterizedTest(name = "{2}, team {1}, forward {5}")
     @MethodSource("fidelityCases")
-    void matchesF217TelemetryWithoutChangingAnyPhysics(
+    void preservesFidelityAndMatchesF218ForwardPhysics(
             long offset, TeamSide team, PlayerHitTimingGrade grade,
             double accuracy, double power, double raw
     ) {
@@ -39,11 +40,21 @@ class FixedStepVolleyballForwardFidelityTests {
         assertEquals(raw * accuracy, event.hitEffectiveAimForward());
         double worldZ = raw == 0.0 ? 0.0 : (team == TeamSide.A ? raw * accuracy : -(raw * accuracy));
         assertEquals(worldZ, event.hitEffectiveAimWorldZ());
-        assertEquals(neutral.event(), withoutForwardTelemetry(event));
-        assertEquals(neutral.event().outgoingVelocity(), event.outgoingVelocity());
-        assertEquals(team == TeamSide.A ? 5.0 * power : -5.0 * power, event.outgoingVelocity().z());
-        assertEquals(neutral.responseState(), actual.responseState());
-        assertEquals(neutral.nextState(), actual.nextState());
+        double baseWorldZ = team == TeamSide.A ? 5.0 * power : -5.0 * power;
+        assertEquals(worldZ * 2.0, event.hitAimVelocityZ());
+        assertEquals(baseWorldZ + event.hitAimVelocityZ(), event.outgoingVelocity().z());
+        assertEquals(neutral.event(), withNeutralForward(event, neutral.event().outgoingVelocity()));
+        assertEquals(neutral.event().outgoingVelocity().x(), event.outgoingVelocity().x());
+        assertEquals(neutral.event().outgoingVelocity().y(), event.outgoingVelocity().y());
+        assertEquals(new VolleyballState(neutral.responseState().position(), event.outgoingVelocity()),
+                actual.responseState());
+        BallVector3 nextPosition = neutral.nextState().position();
+        BallVector3 nextVelocity = neutral.nextState().velocity();
+        assertEquals(new VolleyballState(
+                new BallVector3(nextPosition.x(), nextPosition.y(),
+                        actual.responseState().position().z() + event.outgoingVelocity().z() * STEP),
+                new BallVector3(nextVelocity.x(), nextVelocity.y(), event.outgoingVelocity().z())), actual.nextState());
+        assertTrue(team == TeamSide.A ? event.outgoingVelocity().z() > 0.0 : event.outgoingVelocity().z() < 0.0);
         assertEquals(actual, run(team, offset, raw));
     }
 
@@ -53,6 +64,8 @@ class FixedStepVolleyballForwardFidelityTests {
         PlayerBallContactResponseEvent event = run(TeamSide.B, -1L, raw).event();
         assertEquals(raw * 0.85, event.hitEffectiveAimForward());
         assertEquals(-raw * 0.85, event.hitEffectiveAimWorldZ());
+        assertEquals(-raw * 0.85 * 2.0, event.hitAimVelocityZ());
+        assertEquals(-4.5 + event.hitAimVelocityZ(), event.outgoingVelocity().z());
     }
 
     @ParameterizedTest
@@ -61,21 +74,23 @@ class FixedStepVolleyballForwardFidelityTests {
         for (TeamSide team : TeamSide.values()) {
             assertEquals(Double.doubleToRawLongBits(0.0),
                     Double.doubleToRawLongBits(run(team, -1L, raw).event().hitEffectiveAimWorldZ()));
+            assertEquals(Double.doubleToRawLongBits(0.0),
+                    Double.doubleToRawLongBits(run(team, -1L, raw).event().hitAimVelocityZ()));
         }
     }
 
     @Test
-    void forwardMinusOneZeroAndOneHaveExactlyIdenticalPhysics() {
+    void forwardMinusOneZeroAndOneChangeOnlyZWithCanonicalEarlySpeeds() {
         for (TeamSide team : TeamSide.values()) {
             Run backward = run(team, -1L, -1.0);
             Run neutral = run(team, -1L, 0.0);
             Run forward = run(team, -1L, 1.0);
-            assertEquals(neutral.responseState(), backward.responseState());
-            assertEquals(neutral.responseState(), forward.responseState());
-            assertEquals(neutral.nextState(), backward.nextState());
-            assertEquals(neutral.nextState(), forward.nextState());
-            assertEquals(neutral.event(), withoutForwardTelemetry(backward.event()));
-            assertEquals(neutral.event(), withoutForwardTelemetry(forward.event()));
+            double sign = team == TeamSide.A ? 1.0 : -1.0;
+            assertEquals(sign * 2.8, backward.event().outgoingVelocity().z(), 1.0e-12);
+            assertEquals(sign * 4.5, neutral.event().outgoingVelocity().z());
+            assertEquals(sign * 6.2, forward.event().outgoingVelocity().z(), 1.0e-12);
+            assertEquals(neutral.event(), withNeutralForward(backward.event(), neutral.event().outgoingVelocity()));
+            assertEquals(neutral.event(), withNeutralForward(forward.event(), neutral.event().outgoingVelocity()));
         }
     }
 
@@ -99,6 +114,8 @@ class FixedStepVolleyballForwardFidelityTests {
         PlayerBallContactResponseEvent event = response(events);
         assertEquals(0.7071067811865476 * 0.85, event.hitEffectiveAimForward());
         assertEquals(-(0.7071067811865476 * 0.85), event.hitEffectiveAimWorldZ());
+        assertEquals(-(0.7071067811865476 * 0.85) * 2.0, event.hitAimVelocityZ());
+        assertEquals(-4.5 + event.hitAimVelocityZ(), event.outgoingVelocity().z());
         return new Sequence(events, states);
     }
 
@@ -131,13 +148,15 @@ class FixedStepVolleyballForwardFidelityTests {
                 .map(PlayerBallContactResponseEvent.class::cast).findFirst().orElseThrow();
     }
 
-    private static PlayerBallContactResponseEvent withoutForwardTelemetry(PlayerBallContactResponseEvent event) {
+    private static PlayerBallContactResponseEvent withNeutralForward(
+            PlayerBallContactResponseEvent event, BallVector3 neutralVelocity
+    ) {
         return new PlayerBallContactResponseEvent(
                 event.playerId(), event.teamSide(), event.ballPosition(), event.incomingVelocity(),
-                event.outgoingVelocity(), event.hitTimingOffsetSteps(), event.hitTimingOffsetSeconds(),
+                neutralVelocity, event.hitTimingOffsetSteps(), event.hitTimingOffsetSeconds(),
                 event.hitTimingGrade(), event.hitTimingForwardMultiplier(), event.hitTimingAccuracyMultiplier(),
                 event.hitAimLateral(), event.hitAimWorldX(), event.hitEffectiveAimLateral(),
-                event.hitEffectiveAimWorldX(), event.hitAimVelocityX(), 0.0, 0.0, 0.0);
+                event.hitEffectiveAimWorldX(), event.hitAimVelocityX(), 0.0, 0.0, 0.0, 0.0);
     }
 
     private static Stream<Arguments> fidelityCases() {

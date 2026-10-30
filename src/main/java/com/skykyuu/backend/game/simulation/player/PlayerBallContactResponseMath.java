@@ -56,6 +56,19 @@ public final class PlayerBallContactResponseMath {
             double hitAimLateral,
             double accuracyMultiplier
     ) {
+        return getPlayerContactResponseVelocity(
+                incomingVelocity, teamSide, timingGrade, hitAimLateral, accuracyMultiplier, 0.0
+        );
+    }
+
+    public static BallVector3 getPlayerContactResponseVelocity(
+            BallVector3 incomingVelocity,
+            TeamSide teamSide,
+            PlayerHitTimingGrade timingGrade,
+            double hitAimLateral,
+            double accuracyMultiplier,
+            double hitAimForward
+    ) {
         Objects.requireNonNull(incomingVelocity, "incomingVelocity must not be null");
         Objects.requireNonNull(teamSide, "teamSide must not be null");
 
@@ -72,10 +85,14 @@ public final class PlayerBallContactResponseMath {
             case A -> forwardMagnitude;
             case B -> -forwardMagnitude;
         };
+        double aimVelocityZ = PlayerHitAimMath.getVelocityZContribution(
+                teamSide,
+                PlayerHitTimingAccuracyAim.getEffectiveAimForward(hitAimForward, accuracyMultiplier)
+        );
         return new BallVector3(
                 incomingVelocity.x() + aimVelocityX,
                 PlayerBallContactResponseConfig.UPWARD_VELOCITY_METERS_PER_SECOND,
-                forwardVelocity
+                forwardVelocity + aimVelocityZ
         );
     }
 
@@ -118,6 +135,19 @@ public final class PlayerBallContactResponseMath {
             double hitAimLateral,
             double accuracyMultiplier
     ) {
+        return applyPlayerContactResponse(
+                state, contact, timingGrade, hitAimLateral, accuracyMultiplier, 0.0
+        );
+    }
+
+    public static VolleyballState applyPlayerContactResponse(
+            VolleyballState state,
+            PlayerBallContactEvent contact,
+            PlayerHitTimingGrade timingGrade,
+            double hitAimLateral,
+            double accuracyMultiplier,
+            double hitAimForward
+    ) {
         Objects.requireNonNull(state, "state must not be null");
         Objects.requireNonNull(contact, "contact must not be null");
 
@@ -126,7 +156,8 @@ public final class PlayerBallContactResponseMath {
                 contact.teamSide(),
                 timingGrade,
                 hitAimLateral,
-                accuracyMultiplier
+                accuracyMultiplier,
+                hitAimForward
         );
         return new VolleyballState(state.position(), outgoingVelocity);
     }

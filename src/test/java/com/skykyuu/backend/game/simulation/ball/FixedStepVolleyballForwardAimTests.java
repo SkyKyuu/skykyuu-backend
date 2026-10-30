@@ -32,7 +32,7 @@ class FixedStepVolleyballForwardAimTests {
 
     @ParameterizedTest(name = "Team {0}, local forward {1}")
     @MethodSource("localForwardCases")
-    void preservesLocalForwardAndChangesOnlyTelemetry(TeamSide team, double forward) {
+    void preservesLocalForwardAndChangesOnlyVelocityZ(TeamSide team, double forward) {
         FixedStepVolleyballSimulator simulator = new FixedStepVolleyballSimulator(INITIAL);
         FixedStepVolleyballSimulator neutral = new FixedStepVolleyballSimulator(INITIAL);
         PlayerBallContactResponseEvent event = response(simulator.advance(
@@ -44,12 +44,16 @@ class FixedStepVolleyballForwardAimTests {
         assertEquals(forward, event.hitAimForward());
         assertEquals(neutralEvent, new PlayerBallContactResponseEvent(
                 event.playerId(), event.teamSide(), event.ballPosition(), event.incomingVelocity(),
-                event.outgoingVelocity(), event.hitTimingOffsetSteps(), event.hitTimingOffsetSeconds(),
+                neutralEvent.outgoingVelocity(), event.hitTimingOffsetSteps(), event.hitTimingOffsetSeconds(),
                 event.hitTimingGrade(), event.hitTimingForwardMultiplier(), event.hitTimingAccuracyMultiplier(),
                 event.hitAimLateral(), event.hitAimWorldX(), event.hitEffectiveAimLateral(),
                 event.hitEffectiveAimWorldX(), event.hitAimVelocityX()
         ));
-        assertEquals(neutral.getState(), simulator.getState());
+        double contribution = forward == 0.0 ? 0.0 : (team == TeamSide.A ? forward : -forward) * 2.0;
+        assertEquals(contribution, event.hitAimVelocityZ());
+        assertEquals(new BallVector3(neutralEvent.outgoingVelocity().x(), neutralEvent.outgoingVelocity().y(),
+                neutralEvent.outgoingVelocity().z() + contribution), event.outgoingVelocity());
+        assertEquals(new VolleyballState(neutral.getState().position(), event.outgoingVelocity()), simulator.getState());
         assertTrue(pending(simulator).isEmpty());
     }
 
@@ -70,7 +74,8 @@ class FixedStepVolleyballForwardAimTests {
         assertEquals(0.85, event.hitTimingAccuracyMultiplier());
         assertEquals(0.85, event.hitEffectiveAimForward());
         assertEquals(-0.85, event.hitEffectiveAimWorldZ());
-        assertEquals(-4.5, event.outgoingVelocity().z());
+        assertEquals(-1.7, event.hitAimVelocityZ());
+        assertEquals(-6.2, event.outgoingVelocity().z(), 1.0e-12);
     }
 
     @Test
@@ -83,6 +88,8 @@ class FixedStepVolleyballForwardAimTests {
         assertEquals(0.7071067811865476, event.hitAimForward());
         assertEquals(0.7071067811865476, event.hitEffectiveAimForward());
         assertEquals(0.7071067811865476, event.hitEffectiveAimWorldZ());
+        assertEquals(1.4142135623730951, event.hitAimVelocityZ());
+        assertEquals(5.0 + 1.4142135623730951, event.outgoingVelocity().z());
     }
 
     @Test
@@ -95,6 +102,8 @@ class FixedStepVolleyballForwardAimTests {
         PlayerBallContactResponseEvent event = response(simulator.advance(STEP, List.of(target())));
         assertEquals(-1.0, event.hitAimForward());
         assertEquals(0L, event.hitTimingOffsetSteps());
+        assertEquals(-2.0, event.hitAimVelocityZ());
+        assertEquals(3.0, event.outgoingVelocity().z());
     }
 
     @Test
@@ -104,7 +113,11 @@ class FixedStepVolleyballForwardAimTests {
         for (int step = 0; step < 6; step++) simulator.advance(STEP);
         assertTrue(pending(simulator).isEmpty());
         assertNoResponse(simulator.advance(STEP, List.of(target())));
-        assertEquals(-0.5, response(simulator.advance(STEP, List.of(target()), List.of(intent(-0.5)))).hitAimForward());
+        PlayerBallContactResponseEvent event = response(simulator.advance(STEP, List.of(target()), List.of(intent(-0.5))));
+        assertEquals(-0.5, event.hitAimForward());
+        assertEquals(PlayerHitTimingGrade.LATE, event.hitTimingGrade());
+        assertEquals(-0.85, event.hitAimVelocityZ());
+        assertEquals(4.5 - 0.85, event.outgoingVelocity().z());
     }
 
     @Test
@@ -114,7 +127,11 @@ class FixedStepVolleyballForwardAimTests {
         simulator.reset(INITIAL);
         assertTrue(pending(simulator).isEmpty());
         assertNoResponse(simulator.advance(STEP, List.of(target())));
-        assertEquals(0.0, response(simulator.advance(STEP, List.of(target()), List.of(intent(0.0)))).hitAimForward());
+        PlayerBallContactResponseEvent event = response(simulator.advance(STEP, List.of(target()), List.of(intent(0.0))));
+        assertEquals(0.0, event.hitAimForward());
+        assertEquals(PlayerHitTimingGrade.LATE, event.hitTimingGrade());
+        assertEquals(0.0, event.hitAimVelocityZ());
+        assertEquals(4.5, event.outgoingVelocity().z());
     }
 
     @ParameterizedTest
@@ -125,8 +142,19 @@ class FixedStepVolleyballForwardAimTests {
         assertNoResponse(simulator.advance(delta, List.of(target()), List.of(intent(-1.0))));
         assertTrue(pending(simulator).isEmpty());
         simulator.advance(STEP, List.of(target("player", TeamSide.A, true)));
-        assertNoResponse(simulator.advance(STEP, List.of(target())));
-        assertEquals(0.5, response(simulator.advance(STEP, List.of(target()), List.of(intent(0.5)))).hitAimForward());
+        // The faster forward response requires an overlapping target at the new reentry position.
+        BallVector3 ballPosition = simulator.getState().position();
+        PlayerBallContactTarget reentryTarget = new PlayerBallContactTarget(
+                "player", TeamSide.A, new BallVector3(ballPosition.x(), 0.0, ballPosition.z()));
+        BallSimulationAdvanceResult reentry = simulator.advance(STEP, List.of(reentryTarget));
+        assertTrue(reentry.events().stream().anyMatch(PlayerBallContactEvent.class::isInstance));
+        assertNoResponse(reentry);
+        PlayerBallContactResponseEvent event = response(simulator.advance(
+                STEP, List.of(reentryTarget), List.of(intent(0.5))));
+        assertEquals(0.5, event.hitAimForward());
+        assertEquals(PlayerHitTimingGrade.LATE, event.hitTimingGrade());
+        assertEquals(0.85, event.hitAimVelocityZ());
+        assertEquals(4.5 + 0.85, event.outgoingVelocity().z());
     }
 
     @Test
@@ -152,11 +180,17 @@ class FixedStepVolleyballForwardAimTests {
                 new PlayerHitIntent("b", true, true, -0.375, -0.5)
         ));
         List<PlayerBallContactTarget> targets = List.of(target("a", TeamSide.A, false), target("b", TeamSide.B, false));
-        assertEquals(1.0, response(simulator.advance(STEP, targets)).hitAimForward());
+        PlayerBallContactResponseEvent first = response(simulator.advance(STEP, targets));
+        assertEquals(1.0, first.hitAimForward());
+        assertEquals(2.0, first.hitAimVelocityZ());
+        assertEquals(7.0, first.outgoingVelocity().z());
         assertEquals(-0.5, pending(simulator).get("b"));
         PlayerBallContactResponseEvent second = response(simulator.advance(STEP, targets));
         assertEquals("b", second.playerId());
         assertEquals(-0.5, second.hitAimForward());
+        assertEquals(PlayerHitTimingGrade.PERFECT, second.hitTimingGrade());
+        assertEquals(1.0, second.hitAimVelocityZ());
+        assertEquals(-4.0, second.outgoingVelocity().z());
         assertTrue(pending(simulator).isEmpty());
     }
 

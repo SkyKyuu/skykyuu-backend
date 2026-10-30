@@ -1,6 +1,7 @@
 package com.skykyuu.backend.game.simulation.ball;
 
 import com.skykyuu.backend.game.simulation.player.PlayerHitAimMath;
+import com.skykyuu.backend.game.simulation.player.PlayerHitAimPhysicsConfig;
 import com.skykyuu.backend.game.simulation.player.PlayerHitTimingAccuracyAim;
 import com.skykyuu.backend.game.simulation.player.PlayerHitTimingGrade;
 import com.skykyuu.backend.game.team.TeamSide;
@@ -10,7 +11,8 @@ import java.util.Objects;
 /**
  * Contact response snapshot. Forward aim is captured player-local input;
  * effective forward applies timing accuracy, then effective world Z maps the team sign.
- * All forward aim fields are telemetry only.
+ * Forward aim contributes velocity Z to the timing-powered forward base.
+ * The supplied outgoing velocity remains an unmodified snapshot.
  */
 public record PlayerBallContactResponseEvent(
         String playerId,
@@ -30,8 +32,39 @@ public record PlayerBallContactResponseEvent(
         double hitAimVelocityX,
         double hitAimForward,
         double hitEffectiveAimForward,
-        double hitEffectiveAimWorldZ
+        double hitEffectiveAimWorldZ,
+        double hitAimVelocityZ
 ) implements BallSimulationEvent {
+
+    /** Preserves the B16 snapshot constructor, deriving contribution from supplied world Z. */
+    public PlayerBallContactResponseEvent(
+            String playerId,
+            TeamSide teamSide,
+            BallVector3 ballPosition,
+            BallVector3 incomingVelocity,
+            BallVector3 outgoingVelocity,
+            long hitTimingOffsetSteps,
+            double hitTimingOffsetSeconds,
+            PlayerHitTimingGrade hitTimingGrade,
+            double hitTimingForwardMultiplier,
+            double hitTimingAccuracyMultiplier,
+            double hitAimLateral,
+            double hitAimWorldX,
+            double hitEffectiveAimLateral,
+            double hitEffectiveAimWorldX,
+            double hitAimVelocityX,
+            double hitAimForward,
+            double hitEffectiveAimForward,
+            double hitEffectiveAimWorldZ
+    ) {
+        this(playerId, teamSide, ballPosition, incomingVelocity, outgoingVelocity,
+                hitTimingOffsetSteps, hitTimingOffsetSeconds, hitTimingGrade,
+                hitTimingForwardMultiplier, hitTimingAccuracyMultiplier,
+                hitAimLateral, hitAimWorldX, hitEffectiveAimLateral, hitEffectiveAimWorldX,
+                hitAimVelocityX, hitAimForward, hitEffectiveAimForward, hitEffectiveAimWorldZ,
+                hitEffectiveAimWorldZ == 0.0 ? 0.0 : hitEffectiveAimWorldZ
+                        * PlayerHitAimPhysicsConfig.MAX_FORWARD_VELOCITY_CONTRIBUTION_METERS_PER_SECOND);
+    }
 
     /** Preserves the B15 constructor, deriving fidelity from the supplied snapshot. */
     public PlayerBallContactResponseEvent(
@@ -85,7 +118,7 @@ public record PlayerBallContactResponseEvent(
                 hitTimingOffsetSteps, hitTimingOffsetSeconds, hitTimingGrade,
                 hitTimingForwardMultiplier, hitTimingAccuracyMultiplier,
                 hitAimLateral, hitAimWorldX, hitEffectiveAimLateral, hitEffectiveAimWorldX,
-                hitAimVelocityX, 0.0, 0.0, 0.0);
+                hitAimVelocityX, 0.0, 0.0, 0.0, 0.0);
     }
 
     public PlayerBallContactResponseEvent {

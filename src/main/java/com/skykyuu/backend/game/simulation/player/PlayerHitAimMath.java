@@ -36,4 +36,13 @@ public final class PlayerHitAimMath {
                 * PlayerHitAimPhysicsConfig
                 .MAX_LATERAL_VELOCITY_CONTRIBUTION_METERS_PER_SECOND;
     }
+
+    public static double getVelocityZContribution(
+            TeamSide teamSide,
+            double effectiveAimForward
+    ) {
+        return forwardToWorldZ(teamSide, effectiveAimForward)
+                * PlayerHitAimPhysicsConfig
+                .MAX_FORWARD_VELOCITY_CONTRIBUTION_METERS_PER_SECOND;
+    }
 }
