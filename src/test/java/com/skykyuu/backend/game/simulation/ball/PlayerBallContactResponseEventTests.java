@@ -3,6 +3,8 @@ package com.skykyuu.backend.game.simulation.ball;
 import com.skykyuu.backend.game.simulation.player.PlayerHitTimingGrade;
 import com.skykyuu.backend.game.team.TeamSide;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.ValueSource;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertThrows;
@@ -51,6 +53,7 @@ class PlayerBallContactResponseEventTests {
         assertEquals(0.0, event.hitAimForward());
         assertEquals(0.0, event.hitEffectiveAimForward());
         assertEquals(0.0, event.hitEffectiveAimWorldZ());
+        assertEquals(0.0, event.hitAimVelocityZ());
         assertEquals(
                 event.incomingVelocity().x() + event.hitAimVelocityX(),
                 event.outgoingVelocity().x()
@@ -67,6 +70,46 @@ class PlayerBallContactResponseEventTests {
         assertEquals(-1.0, event.hitAimForward());
         assertEquals(-0.85, event.hitEffectiveAimForward());
         assertEquals(0.85, event.hitEffectiveAimWorldZ());
+        assertEquals(1.7, event.hitAimVelocityZ());
+        assertEquals(vector, event.outgoingVelocity());
+    }
+
+    @ParameterizedTest
+    @ValueSource(doubles = {-1.0, 0.0, -0.0, 1.0, 0.7071067811865476})
+    void b15ConstructorDerivesForwardValuesWithoutChangingSnapshot(double raw) {
+        BallVector3 snapshot = new BallVector3(0.25, 6.3, 99.0);
+        for (TeamSide team : TeamSide.values()) {
+            PlayerBallContactResponseEvent event = new PlayerBallContactResponseEvent(
+                    "player", team, snapshot, snapshot, snapshot, -1L, -1.0 / 60.0,
+                    PlayerHitTimingGrade.EARLY, 0.90, 0.85,
+                    0.375, 0.375, 0.31875, 0.31875, 0.95625, raw);
+            double effective = raw * 0.85;
+            double worldZ = raw == 0.0 ? 0.0 : (team == TeamSide.A ? effective : -effective);
+            assertEquals(raw, event.hitAimForward());
+            assertEquals(effective, event.hitEffectiveAimForward());
+            assertEquals(worldZ, event.hitEffectiveAimWorldZ());
+            assertEquals(worldZ * 2.0, event.hitAimVelocityZ());
+            assertEquals(snapshot, event.outgoingVelocity());
+        }
+    }
+
+    @ParameterizedTest
+    @ValueSource(doubles = {-0.85, 0.0, -0.0, 0.85, 0.6010407640085655})
+    void b16ConstructorUsesSuppliedFidelityWithoutReapplyingAccuracy(double worldZ) {
+        BallVector3 snapshot = new BallVector3(0.25, 6.3, 99.0);
+        PlayerBallContactResponseEvent event = new PlayerBallContactResponseEvent(
+                "player", TeamSide.B, snapshot, snapshot, snapshot, -1L, -1.0 / 60.0,
+                PlayerHitTimingGrade.EARLY, 0.90, 0.85,
+                0.375, -0.375, 0.31875, -0.31875, -0.95625, 1.0, -worldZ, worldZ);
+        assertEquals(new PlayerBallContactResponseEvent(
+                "player", TeamSide.B, snapshot, snapshot, snapshot, -1L, -1.0 / 60.0,
+                PlayerHitTimingGrade.EARLY, 0.90, 0.85,
+                0.375, -0.375, 0.31875, -0.31875, -0.95625, 1.0, -worldZ, worldZ,
+                worldZ == 0.0 ? 0.0 : worldZ * 2.0), event);
+        assertEquals(snapshot, event.outgoingVelocity());
+        if (worldZ == 0.0) {
+            assertEquals(Double.doubleToRawLongBits(0.0), Double.doubleToRawLongBits(event.hitAimVelocityZ()));
+        }
     }
 
     @Test
