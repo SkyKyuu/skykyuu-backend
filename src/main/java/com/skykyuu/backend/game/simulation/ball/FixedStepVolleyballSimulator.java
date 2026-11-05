@@ -3,8 +3,15 @@ package com.skykyuu.backend.game.simulation.ball;
 import com.skykyuu.backend.game.court.CourtResult;
 import com.skykyuu.backend.game.court.CourtSide;
 import com.skykyuu.backend.game.court.IndoorCourtClassifier;
+import com.skykyuu.backend.game.simulation.action.PendingPlayerAction;
+import com.skykyuu.backend.game.simulation.action.PlayerActionResolver;
+import com.skykyuu.backend.game.simulation.action.PlayerActionType;
+import com.skykyuu.backend.game.simulation.action.PlayerCommandIntent;
+import com.skykyuu.backend.game.simulation.ball.ActionSimulationAdvanceResult.ActionStepObservation;
+import com.skykyuu.backend.game.simulation.ball.ActionSimulationAdvanceResult.ExecutedPlayerAction;
 import com.skykyuu.backend.game.simulation.input.PlayerHitBufferConfig;
 import com.skykyuu.backend.game.simulation.input.PlayerHitIntent;
+import com.skykyuu.backend.game.simulation.player.ForearmPassResponseMath;
 import com.skykyuu.backend.game.simulation.player.PlayerBallContactMath;
 import com.skykyuu.backend.game.simulation.player.PlayerBallContactResponseMath;
 import com.skykyuu.backend.game.simulation.player.PlayerBallContactTarget;
@@ -43,6 +50,12 @@ public final class FixedStepVolleyballSimulator {
     private final Map<String, Double> hitAimLateralByPlayer = new HashMap<>();
     private final Map<String, Double> hitAimForwardByPlayer = new HashMap<>();
     private final Map<String, Long> contactEntryStepByPlayer = new HashMap<>();
+    private final PlayerActionResolver actionResolver = new PlayerActionResolver();
+    private ResponseMode responseMode;
+
+    private enum ResponseMode {
+        LEGACY, ACTIONS
+    }
 
     public FixedStepVolleyballSimulator(VolleyballState initialState) {
         state = Objects.requireNonNull(initialState, "initialState must not be null");
@@ -76,12 +89,63 @@ public final class FixedStepVolleyballSimulator {
                         "playerHitIntents must not be null"
                 )
         );
+        requireResponseMode(ResponseMode.LEGACY);
         if (groundContactOccurred) {
             return BallSimulationAdvanceResult.empty();
         }
 
+        responseMode = ResponseMode.LEGACY;
         armHitBuffers(hitIntents);
+        return runFixedSteps(frameDeltaSeconds, contactTargets, null);
+    }
 
+    public ActionSimulationAdvanceResult advanceWithActions(
+            double frameDeltaSeconds,
+            List<PlayerBallContactTarget> playerContactTargets,
+            List<? extends PlayerCommandIntent> playerCommandIntents
+    ) {
+        requireResponseMode(ResponseMode.ACTIONS);
+        List<PlayerBallContactTarget> targets = List.copyOf(playerContactTargets);
+        List<? extends PlayerCommandIntent> intents = List.copyOf(playerCommandIntents);
+        if (groundContactOccurred) {
+            return new ActionSimulationAdvanceResult(0, List.of(), List.of(), emptyActionStep());
+        }
+
+        // Validate the batch before changing mode, capturing edges or advancing the ball.
+        for (PlayerCommandIntent intent : intents) {
+            PlayerHitAim.validateLateral(intent.aimLateral());
+            PlayerHitAim.validateForward(intent.aimForward());
+        }
+        responseMode = ResponseMode.ACTIONS;
+        for (PlayerCommandIntent intent : intents) {
+            if (intent.pressed() && !respondedPlayerContactIds.contains(intent.playerId())) {
+                actionResolver.capture(intent, totalSimulationSteps);
+            }
+        }
+
+        List<ActionStepObservation> actionSteps = new ArrayList<>();
+        BallSimulationAdvanceResult result = runFixedSteps(frameDeltaSeconds, targets, actionSteps);
+        ActionStepObservation lastActionStep = actionSteps.isEmpty()
+                ? new ActionStepObservation(totalSimulationSteps, actionResolver.selectAll(totalSimulationSteps), null)
+                : actionSteps.getLast();
+        return new ActionSimulationAdvanceResult(result.executedSteps(), result.events(), actionSteps, lastActionStep);
+    }
+
+    private void requireResponseMode(ResponseMode requested) {
+        if (responseMode != null && responseMode != requested) {
+            throw new IllegalStateException("Reset the volleyball simulator before changing its response mode");
+        }
+    }
+
+    private ActionStepObservation emptyActionStep() {
+        return new ActionStepObservation(totalSimulationSteps, List.of(), null);
+    }
+
+    private BallSimulationAdvanceResult runFixedSteps(
+            double frameDeltaSeconds,
+            List<PlayerBallContactTarget> contactTargets,
+            List<ActionStepObservation> actionSteps
+    ) {
         if (!Double.isFinite(frameDeltaSeconds) || frameDeltaSeconds <= 0.0) {
             return BallSimulationAdvanceResult.empty();
         }
@@ -97,6 +161,7 @@ public final class FixedStepVolleyballSimulator {
         while (stepsExecuted < VolleyballSimulationConfig.MAX_SUB_STEPS
                 && accumulatorSeconds + ACCUMULATOR_EPSILON_SECONDS
                 >= VolleyballSimulationConfig.FIXED_STEP_SECONDS) {
+            long nextStep = Math.incrementExact(totalSimulationSteps);
             OptionalDouble groundContactTime = VolleyballSimulationMath.findGroundContactTime(
                     state,
                     VolleyballSimulationConfig.FIXED_STEP_SECONDS
@@ -114,6 +179,10 @@ public final class FixedStepVolleyballSimulator {
                 hitAimLateralByPlayer.clear();
                 hitAimForwardByPlayer.clear();
                 contactEntryStepByPlayer.clear();
+                actionResolver.reset();
+                if (actionSteps != null) {
+                    actionSteps.add(emptyActionStep());
+                }
             } else {
                 state = VolleyballSimulationMath.stepFreeFlight(
                         state,
@@ -122,85 +191,50 @@ public final class FixedStepVolleyballSimulator {
                 PlayerContactDetectionResult contacts = detectPlayerContacts(contactTargets);
                 events.addAll(contacts.newContactEvents());
 
-                PlayerBallContactTarget respondingTarget = findRespondingTarget(
-                        contacts.overlappingTargets()
-                );
-                if (respondingTarget != null) {
-                    double hitAimLateral = getResponseHitAimLateral(
-                            respondingTarget.playerId()
-                    );
-                    double hitAimForward = getResponseHitAimForward(
-                            respondingTarget.playerId()
-                    );
-                    double hitAimWorldX = PlayerHitAimMath.lateralToWorldX(
-                            respondingTarget.teamSide(),
-                            hitAimLateral
-                    );
-                    PlayerHitTimingSample timing = createHitTimingSample(
-                            respondingTarget.playerId()
-                    );
-                    PlayerHitTimingGrade timingGrade =
-                            PlayerHitTimingGradeClassifier.classify(timing.offsetSteps());
-                    double forwardMultiplier =
-                            PlayerHitTimingPower.getForwardMultiplier(timingGrade);
-                    double accuracyMultiplier =
-                            PlayerHitTimingAccuracy.getAccuracyMultiplier(timingGrade);
-                    double hitEffectiveAimForward =
-                            PlayerHitTimingAccuracyAim.getEffectiveAimForward(
-                                    hitAimForward, accuracyMultiplier
+                List<PendingPlayerAction> selections = actionSteps == null
+                        ? List.of()
+                        : actionResolver.selectAll(totalSimulationSteps);
+                PlayerBallContactTarget target = findRespondingTarget(contacts.overlappingTargets(), selections, actionSteps != null);
+                ExecutedPlayerAction executedAction = null;
+                if (target != null) {
+                    String playerId = target.playerId();
+                    BallSimulationEvent response;
+                    if (actionSteps == null) {
+                        response = applyGenericHitResponse(
+                                target, hitPressStepByPlayer.get(playerId),
+                                getResponseHitAimLateral(playerId), getResponseHitAimForward(playerId)
+                        );
+                        clearHitBuffer(playerId);
+                    } else {
+                        PendingPlayerAction action = Objects.requireNonNull(selectedForPlayer(selections, playerId));
+                        if (action.actionType() == PlayerActionType.FOREARM_PASS) {
+                            PlayerForearmPassResponseEvent pass = ForearmPassResponseMath.createResponse(
+                                    toPlayerContactSnapshot(target), action.pressStep(), contactEntryStepByPlayer.get(playerId),
+                                    action.aimLateral(), action.aimForward()
                             );
-                    double hitEffectiveAimWorldZ = PlayerHitAimMath.forwardToWorldZ(
-                            respondingTarget.teamSide(), hitEffectiveAimForward
-                    );
-                    double hitAimVelocityZ = PlayerHitAimMath.getVelocityZContribution(
-                            respondingTarget.teamSide(), hitEffectiveAimForward
-                    );
-                    double hitEffectiveAimLateral =
-                            PlayerHitTimingAccuracyAim.getEffectiveAimLateral(
-                                    hitAimLateral, accuracyMultiplier
+                            state = new VolleyballState(state.position(), pass.outgoingVelocity());
+                            response = pass;
+                            executedAction = new ExecutedPlayerAction(action, totalSimulationSteps, pass.timingGrade(), pass.outgoingVelocity());
+                        } else {
+                            PlayerBallContactResponseEvent hit = applyGenericHitResponse(
+                                    target, action.pressStep(), action.aimLateral(), action.aimForward()
                             );
-                    double hitEffectiveAimWorldX = PlayerHitAimMath.lateralToWorldX(
-                            respondingTarget.teamSide(), hitEffectiveAimLateral
-                    );
-                    double hitAimVelocityX = PlayerHitAimMath.getVelocityXContribution(
-                            respondingTarget.teamSide(), hitEffectiveAimLateral
-                    );
-                    PlayerBallContactEvent responseContact = toPlayerContactSnapshot(
-                            respondingTarget
-                    );
-                    state = PlayerBallContactResponseMath.applyPlayerContactResponse(
-                            state,
-                            responseContact,
-                            timingGrade,
-                            hitAimLateral,
-                            accuracyMultiplier,
-                            hitAimForward
-                    );
-                    events.add(toPlayerContactResponseEvent(
-                            responseContact,
-                            state,
-                            timing,
-                            timingGrade,
-                            forwardMultiplier,
-                            accuracyMultiplier,
-                            hitAimLateral,
-                            hitAimWorldX,
-                            hitEffectiveAimLateral,
-                            hitEffectiveAimWorldX,
-                            hitAimVelocityX,
-                            hitAimForward,
-                            hitEffectiveAimForward,
-                            hitEffectiveAimWorldZ,
-                            hitAimVelocityZ
-                    ));
-                    respondedPlayerContactIds.add(respondingTarget.playerId());
-                    hitBufferRemainingSecondsByPlayer.remove(respondingTarget.playerId());
-                    hitPressStepByPlayer.remove(respondingTarget.playerId());
-                    hitAimLateralByPlayer.remove(respondingTarget.playerId());
-                    hitAimForwardByPlayer.remove(respondingTarget.playerId());
+                            response = hit;
+                            executedAction = new ExecutedPlayerAction(action, totalSimulationSteps, hit.hitTimingGrade(), hit.outgoingVelocity());
+                        }
+                        if (!actionResolver.consume(action, totalSimulationSteps)) {
+                            throw new IllegalStateException("Selected action could not be consumed for " + playerId);
+                        }
+                    }
+                    respondedPlayerContactIds.add(playerId);
+                    events.add(response);
                 }
 
-                decayHitBuffers();
+                if (actionSteps == null) {
+                    decayHitBuffers();
+                } else {
+                    actionSteps.add(new ActionStepObservation(totalSimulationSteps, selections, executedAction));
+                }
                 accumulatorSeconds -= VolleyballSimulationConfig.FIXED_STEP_SECONDS;
                 if (accumulatorSeconds < 0.0
                         && accumulatorSeconds > -ACCUMULATOR_EPSILON_SECONDS) {
@@ -209,7 +243,7 @@ public final class FixedStepVolleyballSimulator {
             }
 
             stepsExecuted++;
-            totalSimulationSteps++;
+            totalSimulationSteps = nextStep;
 
             if (groundContactOccurred) {
                 break;
@@ -240,6 +274,8 @@ public final class FixedStepVolleyballSimulator {
         accumulatorSeconds = 0.0;
         totalSimulationSteps = 0L;
         groundContactOccurred = false;
+        responseMode = null;
+        actionResolver.reset();
         activePlayerContactIds.clear();
         respondedPlayerContactIds.clear();
         hitBufferRemainingSecondsByPlayer.clear();
@@ -305,21 +341,38 @@ public final class FixedStepVolleyballSimulator {
     }
 
     private PlayerBallContactTarget findRespondingTarget(
-            List<PlayerBallContactTarget> overlappingTargets
+            List<PlayerBallContactTarget> overlappingTargets,
+            List<PendingPlayerAction> selections,
+            boolean usesActions
     ) {
         for (PlayerBallContactTarget target : overlappingTargets) {
             if (respondedPlayerContactIds.contains(target.playerId())) {
                 continue;
             }
-            double remainingSeconds = hitBufferRemainingSecondsByPlayer.getOrDefault(
-                    target.playerId(),
-                    0.0
-            );
-            if (remainingSeconds > 0.0) {
+            boolean eligible = usesActions
+                    ? selectedForPlayer(selections, target.playerId()) != null
+                    : hitBufferRemainingSecondsByPlayer.getOrDefault(target.playerId(), 0.0) > 0.0;
+            if (eligible) {
                 return target;
             }
         }
         return null;
+    }
+
+    private static PendingPlayerAction selectedForPlayer(List<PendingPlayerAction> selections, String playerId) {
+        for (PendingPlayerAction action : selections) {
+            if (action.playerId().equals(playerId)) {
+                return action;
+            }
+        }
+        return null;
+    }
+
+    private void clearHitBuffer(String playerId) {
+        hitBufferRemainingSecondsByPlayer.remove(playerId);
+        hitPressStepByPlayer.remove(playerId);
+        hitAimLateralByPlayer.remove(playerId);
+        hitAimForwardByPlayer.remove(playerId);
     }
 
     private void armHitBuffers(List<PlayerHitIntent> hitIntents) {
@@ -332,10 +385,7 @@ public final class FixedStepVolleyballSimulator {
             double aimForward = PlayerHitAim.validateForward(intent.aimForward());
             if (respondedPlayerContactIds.contains(playerId)
                     && activePlayerContactIds.contains(playerId)) {
-                hitBufferRemainingSecondsByPlayer.remove(playerId);
-                hitPressStepByPlayer.remove(playerId);
-                hitAimLateralByPlayer.remove(playerId);
-                hitAimForwardByPlayer.remove(playerId);
+                clearHitBuffer(playerId);
                 continue;
             }
 
@@ -369,18 +419,77 @@ public final class FixedStepVolleyballSimulator {
         }
     }
 
-    private PlayerHitTimingSample createHitTimingSample(String playerId) {
-        Long pressStep = hitPressStepByPlayer.get(playerId);
+    private PlayerBallContactResponseEvent applyGenericHitResponse(
+            PlayerBallContactTarget respondingTarget,
+            Long pressStep,
+            double hitAimLateral,
+            double hitAimForward
+    ) {
+        String playerId = respondingTarget.playerId();
         Long contactEntryStep = contactEntryStepByPlayer.get(playerId);
         if (pressStep == null || contactEntryStep == null) {
-            throw new IllegalStateException(
-                    "Missing hit timing state for responding playerId: " + playerId
-            );
+            throw new IllegalStateException("Missing hit timing state for responding playerId: " + playerId);
         }
-        return PlayerHitTimingMath.create(
-                pressStep,
-                contactEntryStep,
-                VolleyballSimulationConfig.FIXED_STEP_SECONDS
+        double hitAimWorldX = PlayerHitAimMath.lateralToWorldX(
+                respondingTarget.teamSide(),
+                hitAimLateral
+        );
+        PlayerHitTimingSample timing = PlayerHitTimingMath.create(
+                pressStep, contactEntryStep, VolleyballSimulationConfig.FIXED_STEP_SECONDS
+        );
+        PlayerHitTimingGrade timingGrade =
+                PlayerHitTimingGradeClassifier.classify(timing.offsetSteps());
+        double forwardMultiplier =
+                PlayerHitTimingPower.getForwardMultiplier(timingGrade);
+        double accuracyMultiplier =
+                PlayerHitTimingAccuracy.getAccuracyMultiplier(timingGrade);
+        double hitEffectiveAimForward =
+                PlayerHitTimingAccuracyAim.getEffectiveAimForward(
+                        hitAimForward, accuracyMultiplier
+                );
+        double hitEffectiveAimWorldZ = PlayerHitAimMath.forwardToWorldZ(
+                respondingTarget.teamSide(), hitEffectiveAimForward
+        );
+        double hitAimVelocityZ = PlayerHitAimMath.getVelocityZContribution(
+                respondingTarget.teamSide(), hitEffectiveAimForward
+        );
+        double hitEffectiveAimLateral =
+                PlayerHitTimingAccuracyAim.getEffectiveAimLateral(
+                        hitAimLateral, accuracyMultiplier
+                );
+        double hitEffectiveAimWorldX = PlayerHitAimMath.lateralToWorldX(
+                respondingTarget.teamSide(), hitEffectiveAimLateral
+        );
+        double hitAimVelocityX = PlayerHitAimMath.getVelocityXContribution(
+                respondingTarget.teamSide(), hitEffectiveAimLateral
+        );
+        PlayerBallContactEvent responseContact = toPlayerContactSnapshot(
+                respondingTarget
+        );
+        state = PlayerBallContactResponseMath.applyPlayerContactResponse(
+                state,
+                responseContact,
+                timingGrade,
+                hitAimLateral,
+                accuracyMultiplier,
+                hitAimForward
+        );
+        return toPlayerContactResponseEvent(
+                responseContact,
+                state,
+                timing,
+                timingGrade,
+                forwardMultiplier,
+                accuracyMultiplier,
+                hitAimLateral,
+                hitAimWorldX,
+                hitEffectiveAimLateral,
+                hitEffectiveAimWorldX,
+                hitAimVelocityX,
+                hitAimForward,
+                hitEffectiveAimForward,
+                hitEffectiveAimWorldZ,
+                hitAimVelocityZ
         );
     }
 
