@@ -8,8 +8,12 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 class PlayerActionTypeTests {
 
     @Test
-    void containsOnlyGenericHitMatchingF31() {
-        assertArrayEquals(new PlayerActionType[]{PlayerActionType.GENERIC_HIT}, PlayerActionType.values());
+    void preservesGenericHitAndAddsForearmPass() {
+        assertArrayEquals(
+                new PlayerActionType[]{PlayerActionType.GENERIC_HIT, PlayerActionType.FOREARM_PASS},
+                PlayerActionType.values()
+        );
         assertEquals("GENERIC_HIT", PlayerActionType.GENERIC_HIT.name());
+        assertEquals("FOREARM_PASS", PlayerActionType.FOREARM_PASS.name());
     }
 }
