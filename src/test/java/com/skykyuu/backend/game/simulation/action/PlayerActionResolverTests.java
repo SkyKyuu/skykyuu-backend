@@ -3,12 +3,15 @@ package com.skykyuu.backend.game.simulation.action;
 import com.skykyuu.backend.game.simulation.input.PlayerHitIntent;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.CsvSource;
+import org.junit.jupiter.params.provider.EnumSource;
 import org.junit.jupiter.params.provider.ValueSource;
 
 import java.util.List;
 
 import static com.skykyuu.backend.game.simulation.action.PlayerActionType.FOREARM_PASS;
 import static com.skykyuu.backend.game.simulation.action.PlayerActionType.GENERIC_HIT;
+import static com.skykyuu.backend.game.simulation.action.PlayerActionType.SET;
 import static org.junit.jupiter.api.Assertions.*;
 
 class PlayerActionResolverTests {
@@ -157,5 +160,100 @@ class PlayerActionResolverTests {
         assertEquals(-0.375, intent.aimForward());
         assertThrows(IllegalArgumentException.class, () -> pass(" ", true, 0, 0));
         assertThrows(IllegalArgumentException.class, () -> new PlayerActionIntent(FOREARM_PASS, "a", true, true, 0, 0));
+    }
+
+    @ParameterizedTest
+    @CsvSource({
+            "EQ, FOREARM_PASS", "QE, FOREARM_PASS",
+            "ER, SET", "RE, SET", "QR, SET", "RQ, SET",
+            "EQR, SET", "ERQ, SET", "QER, SET", "QRE, SET", "REQ, SET", "RQE, SET"
+    })
+    void resolvesAllTwoAndThreeWayTiesIndependentlyOfCaptureOrder(String keys, PlayerActionType winner) {
+        List<PendingPlayerAction> captures = keys.chars().mapToObj(key -> resolver.capture(switch (key) {
+            case 'E' -> hit("a", true, 0, 0);
+            case 'Q' -> pass("a", true, 0, 0);
+            case 'R' -> new SetIntent("a", true, true, 0, 0);
+            default -> throw new AssertionError("Unexpected key " + key);
+        }, 10)).toList();
+        PendingPlayerAction selected = resolver.select("a", 10);
+        assertEquals(winner, selected.actionType());
+        assertSame(captures.stream().filter(action -> action.actionType() == winner).findFirst().orElseThrow(), selected);
+        assertTrue(resolver.consume(selected, 10));
+        var remaining = resolver.select("a", 10);
+        if (keys.length() == 3) {
+            assertEquals(FOREARM_PASS, remaining.actionType());
+        } else {
+            assertSame(captures.stream().filter(action -> action != selected).findFirst().orElseThrow(), remaining);
+        }
+    }
+
+    @ParameterizedTest
+    @EnumSource(PlayerActionType.class)
+    void earliestValidActionBeatsBothLaterTypes(PlayerActionType first) {
+        var winner = resolver.capture(command(first, 0, 0), 10);
+        for (var type : PlayerActionType.values()) {
+            if (type != first) resolver.capture(command(type, 1, -1), 12);
+        }
+        assertSame(winner, resolver.select("a", 15));
+    }
+
+    @Test
+    void promotesThreeCandidatesWithoutRefreshingTheirLifetimeOrAim() {
+        var hit = resolver.capture(hit("a", true, 0, 0), 0);
+        var pass = resolver.capture(pass("a", true, 0, 0), 2);
+        var set = resolver.capture(new SetIntent("a", true, true, 0.5, -0.25), 4);
+        assertSame(hit, resolver.select("a", 5));
+        assertSame(pass, resolver.select("a", 6));
+        assertSame(pass, resolver.select("a", 7));
+        assertSame(set, resolver.select("a", 8));
+        assertSame(set, resolver.select("a", 9));
+        assertEquals(new PendingPlayerAction("a", SET, 4, 0.5, -0.25), set);
+        assertNull(resolver.select("a", 10));
+    }
+
+    @ParameterizedTest
+    @EnumSource(PlayerActionType.class)
+    void replacingACapturePreservesTheOtherTwoCandidates(PlayerActionType repeated) {
+        var hit = resolver.capture(command(GENERIC_HIT, 0, 0), 0);
+        var pass = resolver.capture(command(FOREARM_PASS, 0, 0), 1);
+        var set = resolver.capture(command(SET, 0, 0), 2);
+        var original = List.of(hit, pass, set);
+        var stale = original.stream().filter(action -> action.actionType() == repeated).findFirst().orElseThrow();
+        var replacement = resolver.capture(command(repeated, 0.75, -0.25), 3);
+        assertEquals(new PendingPlayerAction("a", repeated, 3, 0.75, -0.25), replacement);
+        assertFalse(resolver.cancel(stale, 3));
+        assertFalse(resolver.consume(stale, 3));
+        for (var survivor : original.stream().filter(action -> action != stale).toList()) {
+            assertSame(survivor, resolver.select("a", 3));
+            assertTrue(resolver.consume(survivor, 3));
+        }
+        assertSame(replacement, resolver.select("a", 3));
+        assertTrue(resolver.cancel(replacement, 3));
+        assertNull(resolver.select("a", 3));
+    }
+
+    @Test
+    void setIdentityIsIndependentPerPlayerAndAcrossReset() {
+        var intent = new SetIntent("b", true, true, 0.125, -0.25);
+        var old = resolver.capture(intent, 0);
+        var a = resolver.capture(hit("a", true, 0, 0), 0);
+        assertNull(resolver.capture(new SetIntent("b", true, false, 1, 1), 5));
+        assertEquals(List.of(a, old), resolver.selectAll(5));
+        assertTrue(resolver.consume(old, 5));
+        assertSame(a, resolver.select("a", 5));
+        resolver.reset();
+        var replacement = resolver.capture(intent, 0);
+        assertEquals(old, replacement);
+        assertFalse(resolver.cancel(old, 0));
+        assertFalse(resolver.consume(old, 0));
+        assertSame(replacement, resolver.select("b", 0));
+    }
+
+    private static PlayerCommandIntent command(PlayerActionType type, double lateral, double forward) {
+        return switch (type) {
+            case GENERIC_HIT -> hit("a", true, lateral, forward);
+            case FOREARM_PASS -> pass("a", true, lateral, forward);
+            case SET -> new SetIntent("a", true, true, lateral, forward);
+        };
     }
 }

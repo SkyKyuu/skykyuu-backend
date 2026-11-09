@@ -4,6 +4,7 @@ import com.skykyuu.backend.game.simulation.action.ForearmPassIntent;
 import com.skykyuu.backend.game.simulation.action.PlayerActionIntent;
 import com.skykyuu.backend.game.simulation.action.PlayerActionType;
 import com.skykyuu.backend.game.simulation.action.PlayerCommandIntent;
+import com.skykyuu.backend.game.simulation.action.SetIntent;
 import com.skykyuu.backend.game.simulation.ball.ActionSimulationAdvanceResult.ActionStepObservation;
 import com.skykyuu.backend.game.simulation.ball.ActionSimulationAdvanceResult.ExecutedPlayerAction;
 import com.skykyuu.backend.game.simulation.input.PlayerHitIntent;
@@ -22,6 +23,7 @@ import java.util.stream.Stream;
 
 import static com.skykyuu.backend.game.simulation.action.PlayerActionType.FOREARM_PASS;
 import static com.skykyuu.backend.game.simulation.action.PlayerActionType.GENERIC_HIT;
+import static com.skykyuu.backend.game.simulation.action.PlayerActionType.SET;
 import static org.junit.jupiter.api.Assertions.*;
 
 class FixedStepVolleyballActionsTests {
@@ -43,6 +45,7 @@ class FixedStepVolleyballActionsTests {
         return switch (action) {
             case GENERIC_HIT -> PlayerActionIntent.fromHitIntent(new PlayerHitIntent("a", true, true, lateral, forward));
             case FOREARM_PASS -> new ForearmPassIntent("a", true, true, lateral, forward);
+            case SET -> new SetIntent("a", true, true, lateral, forward);
         };
     }
 
@@ -178,6 +181,76 @@ class FixedStepVolleyballActionsTests {
         assertTrue(pair.frame(1, true, new PlayerHitIntent("a", true, true)).isEmpty());
         pair.reset(INITIAL);
         assertInstanceOf(PlayerBallContactEvent.class, pair.frame(1, true).getFirst());
+    }
+
+    @ParameterizedTest
+    @EnumSource(TeamSide.class)
+    void appliesOnlyTheSelectedSetAndPublishesThePhysicalState(TeamSide team) {
+        var sim = new FixedStepVolleyballSimulator(INITIAL);
+        var targets = targets(team);
+        var capture = sim.advanceWithActions(0, targets,
+                List.of(command(GENERIC_HIT, 0, 0), command(FOREARM_PASS, 0, 0), command(SET, 0, 0)));
+        var selected = capture.lastActionStep().selectedActions().getFirst();
+        assertEquals(SET, selected.actionType());
+        assertEquals(0, capture.executedSteps());
+        assertTrue(capture.events().isEmpty());
+        var frame = sim.advanceWithActions(STEP, targets, List.of());
+        assertEquals(2, frame.events().size());
+        var contact = assertInstanceOf(PlayerBallContactEvent.class, frame.events().getFirst());
+        var event = assertInstanceOf(PlayerSetResponseEvent.class, frame.events().getLast());
+        assertEquals(team, event.teamSide());
+        assertEquals(SET, event.actionType());
+        assertEquals(contact.ballPosition(), event.ballPosition());
+        assertEquals(contact.ballVelocity(), event.incomingVelocity());
+        assertEquals(sim.getState().velocity(), event.outgoingVelocity());
+        assertEquals(sim.getState().position(), event.ballPosition());
+        assertEquals(new BallVector3(0.0625, 7.0, team == TeamSide.A ? 0.8 : -0.8), event.outgoingVelocity());
+        var execution = frame.lastActionStep().executedAction();
+        assertSame(selected, execution.action());
+        assertEquals(event.outgoingVelocity(), execution.outgoingVelocity());
+        assertEquals(event.timingGrade(), execution.timingGrade());
+        var remaining = sim.advanceWithActions(0, targets, List.of()).lastActionStep().selectedActions();
+        assertEquals(List.of(FOREARM_PASS), remaining.stream().map(action -> action.actionType()).toList());
+        assertThrows(UnsupportedOperationException.class, () -> frame.events().clear());
+        assertTrue(sim.advanceWithActions(STEP, targets, List.of(command(SET, 1, 1))).events().isEmpty());
+        assertEquals(new BallVector3(0.0625, 7.0, team == TeamSide.A ? 0.8 : -0.8), event.outgoingVelocity());
+    }
+
+    @ParameterizedTest
+    @ValueSource(booleans = {true, false})
+    void rejectsInvalidSetAimAtomicallyEvenWithoutAPressEdge(boolean pressed) {
+        var sim = new FixedStepVolleyballSimulator(INITIAL);
+        var before = sim.advanceWithActions(0, TARGET_A, List.of(command(SET, 0.5, -0.25)));
+        var selected = before.lastActionStep().selectedActions().getFirst();
+        assertThrows(IllegalArgumentException.class, () -> sim.advanceWithActions(
+                STEP, TARGET_A, List.of(command(SET, 1, 1), new SetIntent("a", true, pressed, 0, Double.NaN))
+        ));
+        assertEquals(INITIAL, sim.getState());
+        assertEquals(0, sim.getTotalSimulationSteps());
+        assertEquals(0.0, sim.getAccumulatorSeconds());
+        var after = sim.advanceWithActions(STEP, TARGET_A, List.of());
+        assertSame(selected, after.lastActionStep().executedAction().action());
+        var response = assertInstanceOf(PlayerSetResponseEvent.class, after.events().getLast());
+        assertEquals(0.5, response.aimLateral());
+        assertEquals(-0.25, response.aimForward());
+    }
+
+    @Test
+    void groundTakesPriorityOverSetAndChangingModeStillRequiresReset() {
+        var sim = new FixedStepVolleyballSimulator(NEAR_GROUND);
+        var result = sim.advanceWithActions(STEP, TARGET_A, List.of(command(SET, 0, 0)));
+        assertEquals(List.of(PlayerBallContactEvent.class, BallGroundContactEvent.class),
+                result.events().stream().map(Object::getClass).toList());
+        assertTrue(result.lastActionStep().selectedActions().isEmpty());
+        assertNull(result.lastActionStep().executedAction());
+        assertThrows(IllegalStateException.class, () -> sim.advance(STEP));
+        assertEquals(0, sim.advanceWithActions(STEP, TARGET_A, List.of(command(SET, 0, 0))).executedSteps());
+
+        sim.reset(INITIAL);
+        assertInstanceOf(PlayerBallContactResponseEvent.class,
+                sim.advance(STEP, TARGET_A, List.of(new PlayerHitIntent("a", true, true))).events().getLast());
+        sim.reset(INITIAL);
+        assertNull(sim.advanceWithActions(STEP, TARGET_A, List.of()).lastActionStep().executedAction());
     }
 
     private static final class LegacyComparison {

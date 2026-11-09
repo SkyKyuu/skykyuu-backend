@@ -5,7 +5,6 @@ import com.skykyuu.backend.game.court.CourtSide;
 import com.skykyuu.backend.game.court.IndoorCourtClassifier;
 import com.skykyuu.backend.game.simulation.action.PendingPlayerAction;
 import com.skykyuu.backend.game.simulation.action.PlayerActionResolver;
-import com.skykyuu.backend.game.simulation.action.PlayerActionType;
 import com.skykyuu.backend.game.simulation.action.PlayerCommandIntent;
 import com.skykyuu.backend.game.simulation.ball.ActionSimulationAdvanceResult.ActionStepObservation;
 import com.skykyuu.backend.game.simulation.ball.ActionSimulationAdvanceResult.ExecutedPlayerAction;
@@ -24,6 +23,7 @@ import com.skykyuu.backend.game.simulation.player.PlayerHitTimingGradeClassifier
 import com.skykyuu.backend.game.simulation.player.PlayerHitTimingMath;
 import com.skykyuu.backend.game.simulation.player.PlayerHitTimingPower;
 import com.skykyuu.backend.game.simulation.player.PlayerHitTimingSample;
+import com.skykyuu.backend.game.simulation.player.SetResponseMath;
 
 import java.util.ArrayList;
 import java.util.HashMap;
@@ -207,21 +207,33 @@ public final class FixedStepVolleyballSimulator {
                         clearHitBuffer(playerId);
                     } else {
                         PendingPlayerAction action = Objects.requireNonNull(selectedForPlayer(selections, playerId));
-                        if (action.actionType() == PlayerActionType.FOREARM_PASS) {
-                            PlayerForearmPassResponseEvent pass = ForearmPassResponseMath.createResponse(
-                                    toPlayerContactSnapshot(target), action.pressStep(), contactEntryStepByPlayer.get(playerId),
-                                    action.aimLateral(), action.aimForward()
-                            );
-                            state = new VolleyballState(state.position(), pass.outgoingVelocity());
-                            response = pass;
-                            executedAction = new ExecutedPlayerAction(action, totalSimulationSteps, pass.timingGrade(), pass.outgoingVelocity());
-                        } else {
-                            PlayerBallContactResponseEvent hit = applyGenericHitResponse(
-                                    target, action.pressStep(), action.aimLateral(), action.aimForward()
-                            );
-                            response = hit;
-                            executedAction = new ExecutedPlayerAction(action, totalSimulationSteps, hit.hitTimingGrade(), hit.outgoingVelocity());
-                        }
+                        executedAction = switch (action.actionType()) {
+                            case SET -> {
+                                PlayerSetResponseEvent set = SetResponseMath.createResponse(
+                                        toPlayerContactSnapshot(target), action.pressStep(), contactEntryStepByPlayer.get(playerId),
+                                        action.aimLateral(), action.aimForward()
+                                );
+                                state = new VolleyballState(state.position(), set.outgoingVelocity());
+                                response = set;
+                                yield new ExecutedPlayerAction(action, totalSimulationSteps, set.timingGrade(), set.outgoingVelocity());
+                            }
+                            case FOREARM_PASS -> {
+                                PlayerForearmPassResponseEvent pass = ForearmPassResponseMath.createResponse(
+                                        toPlayerContactSnapshot(target), action.pressStep(), contactEntryStepByPlayer.get(playerId),
+                                        action.aimLateral(), action.aimForward()
+                                );
+                                state = new VolleyballState(state.position(), pass.outgoingVelocity());
+                                response = pass;
+                                yield new ExecutedPlayerAction(action, totalSimulationSteps, pass.timingGrade(), pass.outgoingVelocity());
+                            }
+                            case GENERIC_HIT -> {
+                                PlayerBallContactResponseEvent hit = applyGenericHitResponse(
+                                        target, action.pressStep(), action.aimLateral(), action.aimForward()
+                                );
+                                response = hit;
+                                yield new ExecutedPlayerAction(action, totalSimulationSteps, hit.hitTimingGrade(), hit.outgoingVelocity());
+                            }
+                        };
                         if (!actionResolver.consume(action, totalSimulationSteps)) {
                             throw new IllegalStateException("Selected action could not be consumed for " + playerId);
                         }
