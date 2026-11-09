@@ -11,6 +11,9 @@ import java.util.TreeMap;
 public final class PlayerActionResolver {
 
     private static final long BUFFER_STEPS = 6;
+    private static final List<PlayerActionType> SAME_STEP_PRIORITY = List.of(
+            PlayerActionType.SET, PlayerActionType.FOREARM_PASS, PlayerActionType.GENERIC_HIT
+    );
 
     private final Map<String, EnumMap<PlayerActionType, PendingPlayerAction>> pending = new TreeMap<>();
     private long currentStep;
@@ -75,12 +78,14 @@ public final class PlayerActionResolver {
     }
 
     private static PendingPlayerAction selected(Map<PlayerActionType, PendingPlayerAction> candidates) {
-        PendingPlayerAction hit = candidates.get(PlayerActionType.GENERIC_HIT);
-        PendingPlayerAction pass = candidates.get(PlayerActionType.FOREARM_PASS);
-        if (hit == null || (pass != null && pass.pressStep() <= hit.pressStep())) {
-            return pass;
+        PendingPlayerAction winner = null;
+        for (PlayerActionType type : SAME_STEP_PRIORITY) {
+            PendingPlayerAction candidate = candidates.get(type);
+            if (candidate != null && (winner == null || candidate.pressStep() < winner.pressStep())) {
+                winner = candidate;
+            }
         }
-        return hit;
+        return winner;
     }
 
     private void remove(PendingPlayerAction action, Map<PlayerActionType, PendingPlayerAction> candidates) {
